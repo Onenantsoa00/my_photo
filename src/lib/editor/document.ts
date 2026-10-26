@@ -12,13 +12,14 @@ export function makeInitialDocument(
   widthMm: number | null,
   heightMm: number | null,
   baseWidth = 1500,
+  pageCount = 1,
 ): EditorDocument {
   if (!widthMm || !heightMm) {
-    return emptyDocument(baseWidth, Math.round(baseWidth * 0.6667));
+    return emptyDocument(baseWidth, Math.round(baseWidth * 0.6667), pageCount);
   }
 
   const width = Math.min(baseWidth, MAX_CANVAS_SIDE);
   const height = Math.round((width * heightMm) / widthMm);
 
-  return emptyDocument(width, height);
+  return emptyDocument(width, height, pageCount);
 }

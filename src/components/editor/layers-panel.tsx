@@ -1,7 +1,7 @@
 "use client";
 
 import { useT } from "@/components/locale-provider";
-import { labelFor, type EditorDocument, type Layer } from "@/lib/editor/types";
+import { labelFor, type Layer } from "@/lib/editor/types";
 
 const TYPE_ICON: Record<Layer["type"], string> = {
   text: "T",
@@ -10,7 +10,7 @@ const TYPE_ICON: Record<Layer["type"], string> = {
 };
 
 export function LayersPanel({
-  document,
+  layers,
   selectedId,
   onSelect,
   onToggleVisible,
@@ -19,7 +19,7 @@ export function LayersPanel({
   onDuplicate,
   onDelete,
 }: {
-  document: EditorDocument;
+  layers: Layer[];
   selectedId: string | null;
   onSelect: (id: string | null) => void;
   onToggleVisible: (id: string) => void;
@@ -31,14 +31,14 @@ export function LayersPanel({
   const t = useT();
   // Le dernier calque du tableau est visuellement au-dessus : on l'affiche en
   // premier, comme dans un logiciel de PAO.
-  const ordered = [...document.layers].reverse();
+  const ordered = [...layers].reverse();
 
   return (
     <section className="flex min-h-0 flex-1 flex-col">
       <h2 className="px-3 pb-2 text-xs font-bold uppercase tracking-wide text-ink-500">
         {t("editor.layers")}
         <span className="ml-2 font-normal normal-case text-ink-500">
-          ({document.layers.length})
+          ({layers.length})
         </span>
       </h2>
 
@@ -68,10 +68,10 @@ export function LayersPanel({
                       <span
                         className={`grid h-6 w-6 shrink-0 place-items-center rounded text-xs font-bold ${
                           layer.type === "text"
-                            ? "bg-sky-100 text-sky-700"
+                            ? "bg-sky-100 text-sky-700 dark:bg-sky-950 dark:text-sky-300"
                             : layer.type === "image"
-                              ? "bg-violet-100 text-violet-700"
-                              : "bg-amber-100 text-amber-700"
+                              ? "bg-violet-100 text-violet-700 dark:bg-violet-950 dark:text-violet-300"
+                              : "bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300"
                         }`}
                       >
                         {TYPE_ICON[layer.type]}
@@ -153,7 +153,7 @@ function IconButton({
       title={label}
       aria-label={label}
       className={`grid h-6 w-6 place-items-center rounded text-[11px] leading-none transition-colors ${
-        danger ? "hover:bg-accent-100" : "hover:bg-sand-200"
+        danger ? "hover:bg-accent-100 dark:hover:bg-accent-950" : "hover:bg-sand-200 dark:hover:bg-sand-300/40"
       } ${dim ? "opacity-50" : ""}`}
     >
       {children}

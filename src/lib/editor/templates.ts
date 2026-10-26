@@ -2,7 +2,9 @@ import {
   DEFAULT_FILTERS,
   DOCUMENT_VERSION,
   createId,
+  createPage,
   type EditorDocument,
+  type ImageCrop,
   type ImageLayer,
   type Layer,
   type ShapeLayer,
@@ -79,6 +81,7 @@ export function makeImageLayer(overrides: Partial<ImageLayer> = {}): ImageLayer 
     locked: false,
     src: "",
     cornerRadius: 0,
+    crop: "none",
     filters: { ...DEFAULT_FILTERS },
     ...overrides,
   };
@@ -119,245 +122,28 @@ function doc(
 ): EditorDocument {
   return {
     version: DOCUMENT_VERSION,
-    canvas: { width, height, background },
-    layers: layers.map((layer) => ({ ...layer, id: layer.id || createId() })),
+    canvas: { width, height },
+    pages: [
+      {
+        ...createPage(background),
+        layers: layers.map((layer) => ({
+          ...layer,
+          id: layer.id || createId(layer.type),
+        })),
+      },
+    ],
   };
 }
 
 // ---------------------------------------------------------------------------
-// Modèles
+// Modèles de photobook A4
 // ---------------------------------------------------------------------------
 
 export const TEMPLATES: Template[] = [
   {
-    id: "collage-10x15",
-    nameFr: "Collage 10 × 15",
-    nameMg: "Collage 10 × 15",
-    descriptionFr: "Trois photos côte à côte et un titre, format tirage classique.",
-    targetWidthMm: 150,
-    targetHeightMm: 100,
-    build: () =>
-      doc(1500, 1000, "#ffffff", [
-        makeShapeLayer({
-          name: "Bandeau",
-          shape: "rect",
-          x: 0,
-          y: 0,
-          width: 1500,
-          height: 200,
-          fill: "#0f766e",
-        }),
-        makeTextLayer({
-          x: 60,
-          y: 50,
-          width: 1380,
-          height: 110,
-          text: "Fahatsiarovana",
-          fontSize: 78,
-          fill: "#ffffff",
-        }),
-        makeImageLayer({ x: 60, y: 260, width: 440, height: 620 }),
-        makeImageLayer({ x: 530, y: 260, width: 440, height: 620 }),
-        makeImageLayer({ x: 1000, y: 260, width: 440, height: 620 }),
-      ]),
-  },
-  {
-    id: "portrait-13x18",
-    nameFr: "Portrait vertical 13 × 18",
-    nameMg: "Sary mitsangana 13 × 18",
-    descriptionFr: "Une grande photo et une légende, pour un cadre mural.",
-    targetWidthMm: 130,
-    targetHeightMm: 180,
-    build: () =>
-      doc(1080, 1500, "#f8fafc", [
-        makeImageLayer({ x: 90, y: 90, width: 900, height: 1080 }),
-        makeShapeLayer({
-          name: "Filet",
-          shape: "rect",
-          x: 90,
-          y: 1210,
-          width: 900,
-          height: 8,
-          fill: "#0f766e",
-        }),
-        makeTextLayer({
-          x: 90,
-          y: 1260,
-          width: 900,
-          height: 160,
-          text: "Antananarivo, 2026",
-          fontSize: 62,
-          align: "center",
-          fill: "#0f172a",
-        }),
-      ]),
-  },
-  {
-    id: "affiche-fianakaviana",
-    nameFr: "Affiche famille",
-    nameMg: "Afisy fianakaviana",
-    descriptionFr: "Quatre photos en grille avec un titre central.",
-    targetWidthMm: 300,
-    targetHeightMm: 400,
-    build: () =>
-      doc(1500, 2000, "#1e1b4b", [
-        makeTextLayer({
-          x: 100,
-          y: 90,
-          width: 1300,
-          height: 160,
-          text: "NY FIANAKAVIANAY",
-          fontSize: 104,
-          align: "center",
-          fill: "#facc15",
-        }),
-        makeImageLayer({ x: 100, y: 320, width: 620, height: 620 }),
-        makeImageLayer({ x: 780, y: 320, width: 620, height: 620 }),
-        makeImageLayer({ x: 100, y: 1000, width: 620, height: 620 }),
-        makeImageLayer({ x: 780, y: 1000, width: 620, height: 620 }),
-        makeTextLayer({
-          x: 100,
-          y: 1700,
-          width: 1300,
-          height: 140,
-          text: "2005 — 2026",
-          fontSize: 84,
-          align: "center",
-          fill: "#ffffff",
-          fontStyle: "normal",
-        }),
-      ]),
-  },
-  {
-    id: "carte-voeux",
-    nameFr: "Carte de vœux",
-    nameMg: "Karatra fiarahabana",
-    descriptionFr: "Carte A6 paysage, prête à envoyer pour les fêtes.",
-    targetWidthMm: 148,
-    targetHeightMm: 105,
-    build: () =>
-      doc(1480, 1050, "#fff7ed", [
-        makeShapeLayer({
-          name: "Cercle décoratif",
-          shape: "ellipse",
-          x: 1010,
-          y: -140,
-          width: 640,
-          height: 640,
-          fill: "#fdba74",
-          opacity: 0.7,
-        }),
-        makeImageLayer({ x: 90, y: 300, width: 520, height: 620, cornerRadius: 24 }),
-        makeTextLayer({
-          x: 680,
-          y: 330,
-          width: 640,
-          height: 200,
-          text: "Arahaba !",
-          fontSize: 110,
-          fill: "#9a3412",
-        }),
-        makeTextLayer({
-          x: 680,
-          y: 540,
-          width: 640,
-          height: 260,
-          text: "Ho an'ny taom-baovao 2027",
-          fontSize: 46,
-          fontStyle: "normal",
-          fill: "#7c2d12",
-        }),
-      ]),
-  },
-  {
-    id: "diploma",
-    nameFr: "Souvenir de remise de diplôme",
-    nameMg: "Fahatsiarovana fahaizana",
-    descriptionFr: "Affiche de félicitations pour un diplôme ou un examen.",
-    targetWidthMm: 210,
-    targetHeightMm: 297,
-    build: () =>
-      doc(1240, 1754, "#ffffff", [
-        makeShapeLayer({
-          name: "Cadre",
-          shape: "rect",
-          x: 40,
-          y: 40,
-          width: 1160,
-          height: 1674,
-          fill: "transparent",
-          stroke: "#0f766e",
-          strokeWidth: 10,
-        }),
-        makeTextLayer({
-          x: 110,
-          y: 140,
-          width: 1020,
-          height: 120,
-          text: "Félicitations",
-          fontSize: 92,
-          align: "center",
-          fill: "#0f766e",
-        }),
-        makeImageLayer({ x: 340, y: 340, width: 560, height: 700, cornerRadius: 12 }),
-        makeTextLayer({
-          x: 110,
-          y: 1120,
-          width: 1020,
-          height: 100,
-          text: "RASOA Nomena",
-          fontSize: 70,
-          align: "center",
-          fill: "#0f172a",
-        }),
-        makeTextLayer({
-          x: 110,
-          y: 1250,
-          width: 1020,
-          height: 90,
-          text: "Licence Informatique — 2026",
-          fontSize: 42,
-          fontStyle: "normal",
-          align: "center",
-          fill: "#475569",
-        }),
-      ]),
-  },
-  {
-    id: "mug-1800x800",
-    nameFr: "Kapoaka (mug)",
-    nameMg: "Kapoaka",
-    descriptionFr: "Impression enroulée sur un mug, zone large et basse.",
-    targetWidthMm: 200,
-    targetHeightMm: 85,
-    build: () =>
-      doc(1800, 800, "#ffffff", [
-        makeImageLayer({ x: 0, y: 0, width: 900, height: 800 }),
-        makeTextLayer({
-          x: 960,
-          y: 250,
-          width: 780,
-          height: 180,
-          text: "Misaotra !",
-          fontSize: 120,
-          fill: "#0f172a",
-        }),
-        makeTextLayer({
-          x: 960,
-          y: 450,
-          width: 780,
-          height: 120,
-          text: "MyPhoto Mada",
-          fontSize: 52,
-          fontStyle: "normal",
-          fill: "#0f766e",
-        }),
-      ]),
-  },
-  {
     id: "pb-couverture",
-    nameFr: "Photobook · Couverture",
-    nameMg: "Photobook · Fonony",
+    nameFr: "Couverture",
+    nameMg: "Fonony",
     descriptionFr: "Page de couverture : titre du livre et photo centrale.",
     descriptionMg: "Pejy fonony : lohatenin'ny boky sy sary lehibe eo afovoany.",
     targetWidthMm: 210,
@@ -399,8 +185,8 @@ export const TEMPLATES: Template[] = [
   },
   {
     id: "pb-grille-4",
-    nameFr: "Photobook · Grille de 4 photos",
-    nameMg: "Photobook · Sary efatra",
+    nameFr: "Grille de 4 photos",
+    nameMg: "Sary efatra",
     descriptionFr: "Quatre photos et un titre : la page la plus rapide à remplir.",
     descriptionMg: "Sary efatra sy lohateny : pejy haingana indrindra fenoina.",
     targetWidthMm: 210,
@@ -435,8 +221,8 @@ export const TEMPLATES: Template[] = [
   },
   {
     id: "pb-recit",
-    nameFr: "Photobook · Récit",
-    nameMg: "Photobook · Tantara",
+    nameFr: "Récit",
+    nameMg: "Tantara",
     descriptionFr: "Une grande photo, deux vignettes et un texte pour raconter une journée.",
     descriptionMg: "Sary lehibe, sary kely roa sy soratra mitantara ny andro iray.",
     targetWidthMm: 297,
@@ -459,8 +245,8 @@ export const TEMPLATES: Template[] = [
   },
   {
     id: "pb-mariage",
-    nameFr: "Photobook · Mariage",
-    nameMg: "Photobook · Famakaram-bady",
+    nameFr: "Mariage",
+    nameMg: "Famakaram-bady",
     descriptionFr: "Deux photos, les prénoms et la date, sur fond ivoire.",
     descriptionMg: "Sary roa, anarana sy daty, amin'ny fototra ivoire.",
     targetWidthMm: 210,
@@ -504,8 +290,8 @@ export const TEMPLATES: Template[] = [
   },
   {
     id: "pb-voyage",
-    nameFr: "Photobook · Voyage",
-    nameMg: "Photobook · Dia",
+    nameFr: "Voyage",
+    nameMg: "Dia",
     descriptionFr: "Trois photos de voyage et le nom du lieu.",
     descriptionMg: "Sary telo sy anaran'ny toerana.",
     targetWidthMm: 297,
@@ -528,27 +314,33 @@ export const TEMPLATES: Template[] = [
   },
   {
     id: "pb-bebe",
-    nameFr: "Photobook · Bébé",
-    nameMg: "Photobook · Zaza",
+    nameFr: "Bébé",
+    nameMg: "Zaza",
     descriptionFr: "Photo ronde, fond pastel et prénom.",
     descriptionMg: "Sary boribory, fototra pastel sy anarana.",
-    targetWidthMm: 200,
-    targetHeightMm: 200,
+    targetWidthMm: 210,
+    targetHeightMm: 297,
     build: () =>
-      doc(1500, 1500, "#fdf2f8", [
+      doc(1500, 2121, "#fdf2f8", [
         makeShapeLayer({
           name: "Cercle",
           shape: "ellipse",
           x: 350,
-          y: 200,
+          y: 350,
           width: 800,
           height: 800,
           fill: "#fbcfe8",
         }),
-        makeImageLayer({ x: 400, y: 250, width: 700, height: 700, cornerRadius: 350 }),
+        makeImageLayer({
+          x: 400,
+          y: 400,
+          width: 700,
+          height: 700,
+          crop: "circle",
+        }),
         makeTextLayer({
           x: 150,
-          y: 1080,
+          y: 1320,
           width: 1200,
           height: 150,
           text: "Soa hery",
@@ -560,8 +352,8 @@ export const TEMPLATES: Template[] = [
   },
   {
     id: "pb-fete",
-    nameFr: "Photobook · Fête",
-    nameMg: "Photobook · Fety",
+    nameFr: "Fête",
+    nameMg: "Fety",
     descriptionFr: "Bandeau coloré et deux photos pour un anniversaire.",
     descriptionMg: "Tâche miloko sy sary roa ho an'ny tsingerintaona.",
     targetWidthMm: 210,
@@ -594,8 +386,8 @@ export const TEMPLATES: Template[] = [
   },
   {
     id: "pb-page-simple",
-    nameFr: "Photobook · Page simple",
-    nameMg: "Photobook · Pejy tsotra",
+    nameFr: "Page simple",
+    nameMg: "Pejy tsotra",
     descriptionFr: "Une photo plein cadre et une légende discrète.",
     descriptionMg: "Sary feno ny pejy sy fanamarihana kely.",
     targetWidthMm: 210,
@@ -613,6 +405,60 @@ export const TEMPLATES: Template[] = [
           fontStyle: "normal",
           align: "center",
           fill: "#64748b",
+        }),
+      ]),
+  },
+  {
+    id: "pb-formes",
+    nameFr: "Cœurs & formes",
+    nameMg: "Fo sy endrika",
+    descriptionFr: "Trois photos découpées en cœur, cercle et losange.",
+    descriptionMg: "Sary telo voatapaka amin'ny fo, boribory sy efajoro.",
+    targetWidthMm: 210,
+    targetHeightMm: 297,
+    build: () =>
+      doc(1500, 2121, "#fff7ed", [
+        makeTextLayer({
+          x: 90,
+          y: 100,
+          width: 1320,
+          height: 120,
+          text: "Amour & souvenirs",
+          fontSize: 78,
+          align: "center",
+          fill: "#9a3412",
+        }),
+        makeImageLayer({
+          x: 150,
+          y: 330,
+          width: 540,
+          height: 540,
+          crop: "heart" as ImageCrop,
+        }),
+        makeImageLayer({
+          x: 810,
+          y: 330,
+          width: 540,
+          height: 540,
+          crop: "circle" as ImageCrop,
+        }),
+        makeImageLayer({
+          x: 380,
+          y: 980,
+          width: 740,
+          height: 740,
+          crop: "diamond" as ImageCrop,
+        }),
+        makeTextLayer({
+          x: 150,
+          y: 1800,
+          width: 1200,
+          height: 120,
+          text: "Ho anao mandrakizay",
+          fontSize: 52,
+          fontStyle: "normal",
+          align: "center",
+          fill: "#c2410c",
         }),
       ]),
   },
@@ -646,7 +492,7 @@ export const THEMES: Theme[] = [
     descriptionFr: "Grilles de portraits et souvenirs de famille.",
     descriptionMg: "Sary mitovy sy fahatsiarovana fianakaviana.",
     emoji: "👨‍👩‍👧‍👦",
-    templateIds: ["pb-grille-4", "pb-recit", "pb-page-simple", "collage-10x15"],
+    templateIds: ["pb-grille-4", "pb-recit", "pb-page-simple", "pb-couverture"],
   },
   {
     id: "mariage",
@@ -682,7 +528,7 @@ export const THEMES: Theme[] = [
     descriptionFr: "Couleurs vives pour les événements.",
     descriptionMg: "Loko mamirapiratra ho an'ny hetsika.",
     emoji: "🎉",
-    templateIds: ["pb-fete", "pb-grille-4", "pb-couverture"],
+    templateIds: ["pb-fete", "pb-grille-4", "pb-formes"],
   },
 ];
 
@@ -700,7 +546,6 @@ export function templatesForTheme(themeId: string): Template[] {
     .filter((template): template is Template => Boolean(template));
 }
 
-
 export function findTemplate(templateId: string): Template | undefined {
   return TEMPLATES.find((template) => template.id === templateId);
 }
@@ -708,14 +553,14 @@ export function findTemplate(templateId: string): Template | undefined {
 /**
  * Adapte une composition à un nouveau plan de travail (par exemple le format
  * réellement commandé) : mise à l'échelle uniforme puis recentrage, pour ne pas
-déformer les textes ni rogner les calques.
+ * déformer les textes ni rogner les calques.
  */
 export function fitDocument(
   document: EditorDocument,
   width: number,
   height: number,
 ): EditorDocument {
-  const { canvas, layers } = document;
+  const { canvas, pages } = document;
 
   if (canvas.width === width && canvas.height === height) return document;
 
@@ -723,29 +568,35 @@ export function fitDocument(
   const offsetX = (width - canvas.width * scale) / 2;
   const offsetY = (height - canvas.height * scale) / 2;
 
-  const scaled = layers.map(
-    (layer) =>
-      ({
-        ...layer,
-        x: offsetX + layer.x * scale,
-        y: offsetY + layer.y * scale,
-        width: Math.max(1, layer.width * scale),
-        height: Math.max(1, layer.height * scale),
-        ...(layer.type === "text"
-          ? { fontSize: Math.max(4, layer.fontSize * scale) }
-          : {}),
-        ...(layer.type === "image"
-          ? { cornerRadius: layer.cornerRadius * scale }
-          : {}),
-        ...(layer.type === "shape"
-          ? { cornerRadius: layer.cornerRadius * scale, strokeWidth: layer.strokeWidth * scale }
-          : {}),
-      }) as Layer,
-  );
+  const scaledPages = pages.map((page) => ({
+    ...page,
+    layers: page.layers.map(
+      (layer) =>
+        ({
+          ...layer,
+          x: offsetX + layer.x * scale,
+          y: offsetY + layer.y * scale,
+          width: Math.max(1, layer.width * scale),
+          height: Math.max(1, layer.height * scale),
+          ...(layer.type === "text"
+            ? { fontSize: Math.max(4, layer.fontSize * scale) }
+            : {}),
+          ...(layer.type === "image"
+            ? { cornerRadius: layer.cornerRadius * scale }
+            : {}),
+          ...(layer.type === "shape"
+            ? {
+                cornerRadius: layer.cornerRadius * scale,
+                strokeWidth: layer.strokeWidth * scale,
+              }
+            : {}),
+        }) as Layer,
+    ),
+  }));
 
   return {
     ...document,
     canvas: { ...canvas, width, height },
-    layers: scaled,
+    pages: scaledPages,
   };
 }

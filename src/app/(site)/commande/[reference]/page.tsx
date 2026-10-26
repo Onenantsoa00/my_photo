@@ -3,13 +3,18 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { StatusBadge } from "@/components/status-badge";
-import { formatDateTime, formatMga } from "@/lib/format";
+import { formatDate, formatDateTime, formatMga } from "@/lib/format";
 import { translate, type TranslationKey } from "@/lib/i18n";
 import { getLocale } from "@/lib/locale.server";
-import { PAYMENT_METHOD_LABEL_KEY, type PaymentMethodValue } from "@/lib/payment";
+import {
+  PAYMENT_ACCOUNT_NAME,
+  PAYMENT_METHOD_LABEL_KEY,
+  type PaymentMethodValue,
+} from "@/lib/payment";
 import { storageUrl } from "@/lib/storage-url";
 import { prisma } from "@/lib/prisma";
 import { getSessionUser } from "@/server/auth";
+import { deliveryEstimate } from "@/server/notifications";
 
 type PageProps = { params: Promise<{ reference: string }> };
 
@@ -28,7 +33,13 @@ export default async function OrderPage({ params }: PageProps) {
     prisma.order.findUnique({
       where: { reference },
       include: {
-        items: true,
+        items: {
+          include: {
+            design: { select: { title: true } },
+            product: { select: { leadTimeDays: true } },
+          },
+        },
+        deliveryZone: { select: { etaDaysMax: true } },
         events: { orderBy: { createdAt: "asc" } },
       },
     }),
@@ -51,6 +62,16 @@ export default async function OrderPage({ params }: PageProps) {
   const needsAction =
     order.paymentStatus === "PENDING" ||
     order.paymentStatus === "AWAITING_VERIFICATION";
+  const paymentMotif =
+    order.items
+      .map((item) => item.design?.title?.trim())
+      .filter((title): title is string => Boolean(title))
+      .join(", ")
+      .slice(0, 160) || order.reference;
+
+  const dateLocale = locale === "mg" ? "fr-MG" : "fr-FR";
+  // Paiement validé à la main par l'administrateur : on annonce le délai.
+  const delivery = order.paymentStatus === "PAID" ? deliveryEstimate(order) : null;
 
   return (
     <div className="container-page py-10">
@@ -167,6 +188,29 @@ export default async function OrderPage({ params }: PageProps) {
                 <StatusBadge kind="payment" value={order.paymentStatus} locale={locale} />
               </div>
 
+              {delivery ? (
+                <div className="mt-3 rounded-xl bg-brand-100/70 p-3 ring-1 ring-brand-300 dark:bg-brand-900/40 dark:ring-brand-800">
+                  <p className="text-xs font-bold text-brand-900 dark:text-brand-100">
+                    ✓ {t("notif.paidTitle")}
+                  </p>
+                  <p className="mt-1 text-xs leading-relaxed text-brand-800 dark:text-brand-200">
+                    {t("notif.deliveryEstimate", {
+                      days: delivery.days,
+                      date: formatDate(delivery.eta, dateLocale),
+                    })}
+                  </p>
+                </div>
+              ) : null}
+
+              {order.paymentTarget ? (
+                <p className="muted mt-2 text-xs">
+                  {t("checkout.merchantNumber")} :{" "}
+                  <span className="font-mono">{order.paymentTarget}</span>
+                  <br />
+                  {PAYMENT_ACCOUNT_NAME}
+                </p>
+              ) : null}
+
               {order.paymentReference ? (
                 <p className="muted mt-2 text-xs">
                   {t("checkout.transactionRef")} :{" "}
@@ -176,17 +220,23 @@ export default async function OrderPage({ params }: PageProps) {
             </div>
 
             {needsAction && order.paymentMethod !== "CASH_ON_DELIVERY" && order.paymentTarget ? (
-              <div className="rounded-xl bg-amber-50 p-4 ring-1 ring-amber-200">
-                <h2 className="text-sm font-bold text-amber-900">
+              <div className="rounded-xl bg-amber-50 p-4 ring-1 ring-amber-200 dark:bg-amber-950/40 dark:ring-amber-900">
+                <h2 className="text-sm font-bold text-amber-900 dark:text-amber-100">
                   {t("order.payInstructions")}
                 </h2>
-                <p className="mt-2 text-xs text-amber-900">
-                  {t("checkout.mobileMoneyHint")}
+                <p className="mt-2 text-xs text-amber-900 dark:text-amber-100">
+                  {t("checkout.mobileMoneySteps")}
                 </p>
-                <p className="mt-2 font-mono text-sm font-bold text-amber-900">
+                <p className="mt-3 font-mono text-lg font-black text-amber-900 dark:text-amber-100">
                   {order.paymentTarget}
                 </p>
-                <p className="mt-1 text-xs text-amber-900">
+                <p className="text-xs text-amber-900 dark:text-amber-100">
+                  {PAYMENT_ACCOUNT_NAME}
+                </p>
+                <p className="mt-2 text-xs text-amber-900 dark:text-amber-100">
+                  {t("checkout.paymentMotif")} : <strong>{paymentMotif}</strong>
+                </p>
+                <p className="mt-1 text-xs text-amber-900 dark:text-amber-100">
                   {t("order.sentAmount")} {formatMga(order.totalMga)}
                 </p>
               </div>

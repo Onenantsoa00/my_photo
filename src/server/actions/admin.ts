@@ -2,8 +2,10 @@
 
 import { revalidatePath } from "next/cache";
 
+import { formatDate } from "@/lib/format";
 import { prisma } from "@/lib/prisma";
 import { getSessionUser } from "@/server/auth";
+import { deliveryEstimate } from "@/server/notifications";
 
 const ORDER_STATUSES = [
   "PENDING",
@@ -79,12 +81,31 @@ export async function reviewPaymentAction(formData: FormData): Promise<void> {
 
   const order = await prisma.order.findUnique({
     where: { id: orderId },
-    select: { id: true, reference: true, paymentStatus: true, status: true },
+    select: {
+      id: true,
+      reference: true,
+      paymentStatus: true,
+      status: true,
+      deliveryMode: true,
+      paidAt: true,
+      updatedAt: true,
+      deliveryZone: { select: { etaDaysMax: true } },
+      items: { select: { product: { select: { leadTimeDays: true } } } },
+    },
   });
 
   if (!order) return;
 
   const approved = decision === "approve";
+
+  // La validation est manuelle : le client est prévenu aussitôt, avec le délai
+  // de livraison calculé à partir du produit et de la zone choisie.
+  const estimate = approved
+    ? deliveryEstimate({ ...order, paidAt: new Date() })
+    : null;
+  const deliveryNote = estimate
+    ? `Livraison prévue sous ${estimate.days} jours (le ${formatDate(estimate.eta)})`
+    : null;
 
   await prisma.$transaction([
     prisma.order.update({
@@ -104,11 +125,9 @@ export async function reviewPaymentAction(formData: FormData): Promise<void> {
         orderId,
         status: approved ? "CONFIRMED" : order.status,
         actor,
-        note: note
-          ? note
-          : approved
-            ? "Paiement vérifié et validé"
-            : "Paiement rejeté",
+        note: [note || (approved ? "Paiement vérifié et validé" : "Paiement rejeté"), deliveryNote]
+          .filter(Boolean)
+          .join(" · "),
       },
     }),
   ]);
@@ -173,6 +192,9 @@ export async function updateDeliveryZoneAction(formData: FormData): Promise<void
   if (!actor) return;
 
   const zoneId = String(formData.get("zoneId") ?? "");
+  const name = String(formData.get("name") ?? "").trim();
+  const region = String(formData.get("region") ?? "").trim();
+  const city = String(formData.get("city") ?? "").trim();
   const feeMga = Number(formData.get("feeMga") ?? NaN);
   const etaDaysMin = Number(formData.get("etaDaysMin") ?? NaN);
   const etaDaysMax = Number(formData.get("etaDaysMax") ?? NaN);
@@ -183,6 +205,9 @@ export async function updateDeliveryZoneAction(formData: FormData): Promise<void
   await prisma.deliveryZone.update({
     where: { id: zoneId },
     data: {
+      ...(name ? { name } : {}),
+      ...(region ? { region } : {}),
+      ...(city ? { city } : {}),
       feeMga: Math.round(feeMga),
       etaDaysMin: Number.isFinite(etaDaysMin) ? Math.max(0, Math.round(etaDaysMin)) : 1,
       etaDaysMax: Number.isFinite(etaDaysMax) ? Math.max(0, Math.round(etaDaysMax)) : 3,
@@ -192,4 +217,242 @@ export async function updateDeliveryZoneAction(formData: FormData): Promise<void
 
   revalidatePath("/admin/zones");
   revalidatePath("/commande");
+  revalidatePath("/", "layout");
+}
+
+// ---------------------------------------------------------------------------
+// Gestion du catalogue et des zones
+// ---------------------------------------------------------------------------
+
+function slugify(value: string): string {
+  const slug = value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 48);
+
+  return slug || "produit";
+}
+
+/** Référence unique : on ajoute un suffixe tant que le nom est pris. */
+async function uniqueProductSlug(base: string): Promise<string> {
+  let slug = base;
+  let attempt = 1;
+
+  while (await prisma.product.findUnique({ where: { slug }, select: { id: true } })) {
+    attempt += 1;
+    slug = `${base}-${attempt}`;
+  }
+
+  return slug;
+}
+
+async function uniqueVariantSku(base: string): Promise<string> {
+  let sku = base;
+  let attempt = 1;
+
+  while (await prisma.productVariant.findUnique({ where: { sku }, select: { id: true } })) {
+    attempt += 1;
+    sku = `${base}-${attempt}`;
+  }
+
+  return sku;
+}
+
+/** Création d'un produit, avec un format « Standard » pour être vendable tout de suite. */
+export async function createProductAction(formData: FormData): Promise<void> {
+  const actor = await assertAdmin();
+  if (!actor) return;
+
+  const nameFr = String(formData.get("nameFr") ?? "").trim();
+  const nameMg = String(formData.get("nameMg") ?? "").trim();
+  const descriptionFr = String(formData.get("descriptionFr") ?? "").trim();
+  const basePriceMga = Number(formData.get("basePriceMga") ?? NaN);
+  const leadTimeDays = Number(formData.get("leadTimeDays") ?? NaN);
+  const isActive = formData.get("isActive") === "on";
+  const isFeatured = formData.get("isFeatured") === "on";
+  const variantLabel = String(formData.get("variantLabel") ?? "").trim();
+
+  if (!nameFr || !Number.isFinite(basePriceMga) || basePriceMga < 0) return;
+
+  const requestedCategoryId = String(formData.get("categoryId") ?? "");
+  const category = requestedCategoryId
+    ? await prisma.category.findUnique({ where: { id: requestedCategoryId } })
+    : await prisma.category.findFirst({
+        where: { isActive: true },
+        orderBy: { sortOrder: "asc" },
+      });
+
+  if (!category) return;
+
+  const slug = await uniqueProductSlug(slugify(nameFr));
+  const price = Math.round(basePriceMga);
+  const last = await prisma.product.aggregate({
+    where: { categoryId: category.id },
+    _max: { sortOrder: true },
+  });
+
+  const product = await prisma.product.create({
+    data: {
+      slug,
+      categoryId: category.id,
+      nameFr,
+      nameMg: nameMg || nameFr,
+      descriptionFr: descriptionFr || nameFr,
+      descriptionMg: nameMg || descriptionFr || nameFr,
+      basePriceMga: price,
+      leadTimeDays: Number.isFinite(leadTimeDays) ? Math.max(0, Math.round(leadTimeDays)) : 2,
+      isActive,
+      isFeatured,
+      sortOrder: (last._max.sortOrder ?? 0) + 1,
+    },
+  });
+
+  await prisma.productVariant.create({
+    data: {
+      productId: product.id,
+      sku: await uniqueVariantSku(`${slug}-standard`),
+      label: variantLabel || "Standard",
+      priceMga: price,
+      isDefault: true,
+      isActive: true,
+      sortOrder: 0,
+    },
+  });
+
+  revalidatePath("/admin/produits");
+  revalidatePath("/", "layout");
+}
+
+/**
+ * Suppression d'un produit. L'historique des commandes est préservé :
+ * les articles gardent leur libellé et leur prix saisis à l'époque.
+ */
+export async function deleteProductAction(formData: FormData): Promise<void> {
+  const actor = await assertAdmin();
+  if (!actor) return;
+
+  const productId = String(formData.get("productId") ?? "");
+  if (!productId) return;
+
+  const product = await prisma.product.findUnique({ where: { id: productId } });
+  if (!product) return;
+
+  await prisma.product.delete({ where: { id: productId } });
+
+  revalidatePath("/admin/produits");
+  revalidatePath("/produits");
+  revalidatePath("/", "layout");
+}
+
+export async function createVariantAction(formData: FormData): Promise<void> {
+  const actor = await assertAdmin();
+  if (!actor) return;
+
+  const productId = String(formData.get("productId") ?? "");
+  const label = String(formData.get("label") ?? "").trim();
+  const priceMga = Number(formData.get("priceMga") ?? NaN);
+  const widthMm = Number(formData.get("widthMm") ?? NaN);
+  const heightMm = Number(formData.get("heightMm") ?? NaN);
+
+  const product = await prisma.product.findUnique({
+    where: { id: productId },
+    select: { id: true, slug: true },
+  });
+
+  if (!product || !label || !Number.isFinite(priceMga) || priceMga < 0) return;
+
+  const last = await prisma.productVariant.aggregate({
+    where: { productId: product.id },
+    _max: { sortOrder: true },
+  });
+
+  await prisma.productVariant.create({
+    data: {
+      productId: product.id,
+      sku: await uniqueVariantSku(`${product.slug}-${slugify(label)}`),
+      label,
+      priceMga: Math.round(priceMga),
+      widthMm: Number.isFinite(widthMm) && widthMm > 0 ? Math.round(widthMm) : null,
+      heightMm: Number.isFinite(heightMm) && heightMm > 0 ? Math.round(heightMm) : null,
+      isDefault: false,
+      isActive: true,
+      sortOrder: (last._max.sortOrder ?? -1) + 1,
+    },
+  });
+
+  revalidatePath("/admin/produits");
+  revalidatePath("/", "layout");
+}
+
+export async function deleteVariantAction(formData: FormData): Promise<void> {
+  const actor = await assertAdmin();
+  if (!actor) return;
+
+  const variantId = String(formData.get("variantId") ?? "");
+  if (!variantId) return;
+
+  const variant = await prisma.productVariant.findUnique({
+    where: { id: variantId },
+    select: { id: true, productId: true },
+  });
+  if (!variant) return;
+
+  // Un produit sans format ne serait plus achetable : on garde toujours le
+  // dernier format, l'admin peut le désactiver ou le renommer à la place.
+  const count = await prisma.productVariant.count({ where: { productId: variant.productId } });
+  if (count <= 1) return;
+
+  await prisma.productVariant.delete({ where: { id: variantId } });
+
+  revalidatePath("/admin/produits");
+  revalidatePath("/", "layout");
+}
+
+export async function createDeliveryZoneAction(formData: FormData): Promise<void> {
+  const actor = await assertAdmin();
+  if (!actor) return;
+
+  const name = String(formData.get("name") ?? "").trim();
+  const region = String(formData.get("region") ?? "").trim();
+  const city = String(formData.get("city") ?? "").trim();
+  const feeMga = Number(formData.get("feeMga") ?? NaN);
+  const etaDaysMin = Number(formData.get("etaDaysMin") ?? NaN);
+  const etaDaysMax = Number(formData.get("etaDaysMax") ?? NaN);
+
+  if (!name || !city || !Number.isFinite(feeMga) || feeMga < 0) return;
+
+  await prisma.deliveryZone.create({
+    data: {
+      name,
+      region: region || city,
+      city,
+      feeMga: Math.round(feeMga),
+      etaDaysMin: Number.isFinite(etaDaysMin) ? Math.max(0, Math.round(etaDaysMin)) : 1,
+      etaDaysMax: Number.isFinite(etaDaysMax) ? Math.max(0, Math.round(etaDaysMax)) : 3,
+      isActive: formData.get("isActive") === "on",
+    },
+  });
+
+  revalidatePath("/admin/zones");
+  revalidatePath("/commande");
+  revalidatePath("/", "layout");
+}
+
+export async function deleteDeliveryZoneAction(formData: FormData): Promise<void> {
+  const actor = await assertAdmin();
+  if (!actor) return;
+
+  const zoneId = String(formData.get("zoneId") ?? "");
+  if (!zoneId) return;
+
+  // Les commandes existantes ne référencent plus la zone (colonne nullable),
+  // leur libellé figé et leur prix restent donc intacts.
+  await prisma.deliveryZone.delete({ where: { id: zoneId } });
+
+  revalidatePath("/admin/zones");
+  revalidatePath("/commande");
+  revalidatePath("/", "layout");
 }

@@ -6,7 +6,11 @@ import { StatusBadge } from "@/components/status-badge";
 import { formatDateTime, formatMga } from "@/lib/format";
 import { translate } from "@/lib/i18n";
 import { getLocale } from "@/lib/locale.server";
-import { PAYMENT_METHOD_LABEL_KEY, type PaymentMethodValue } from "@/lib/payment";
+import {
+  PAYMENT_ACCOUNT_NAME,
+  PAYMENT_METHOD_LABEL_KEY,
+  type PaymentMethodValue,
+} from "@/lib/payment";
 import { prisma } from "@/lib/prisma";
 import { storageUrl } from "@/lib/storage-url";
 import { reviewPaymentAction, updateOrderStatusAction } from "@/server/actions/admin";
@@ -51,6 +55,12 @@ export default async function AdminOrderDetailPage({
   // la livraison reste simplement en attente jusqu'à l'encaissement effectif.
   const paymentActionable =
     order.paymentStatus === "AWAITING_VERIFICATION" || order.paymentStatus === "PENDING";
+  const paymentMotif =
+    order.items
+      .map((item) => item.design?.title?.trim())
+      .filter((title): title is string => Boolean(title))
+      .join(", ")
+      .slice(0, 160) || order.reference;
 
   return (
     <div>
@@ -214,13 +224,24 @@ export default async function AdminOrderDetailPage({
 
                 {!isCashOnDelivery ? (
                   <>
-                    <div className="flex justify-between">
+                    <div className="flex justify-between gap-3">
                       <dt>{t("checkout.merchantNumber")}</dt>
-                      <dd className="font-mono">{order.paymentTarget ?? "—"}</dd>
+                      <dd className="text-right font-mono">
+                        {order.paymentTarget ?? "—"}
+                        <span className="block text-[10px] font-sans font-normal">
+                          {PAYMENT_ACCOUNT_NAME}
+                        </span>
+                      </dd>
                     </div>
-                    <div className="flex justify-between">
+                    <div className="flex justify-between gap-3">
+                      <dt>{t("checkout.paymentMotif")}</dt>
+                      <dd className="max-w-48 truncate text-right font-semibold">
+                        {paymentMotif}
+                      </dd>
+                    </div>
+                    <div className="flex justify-between gap-3">
                       <dt>{t("checkout.transactionRef")}</dt>
-                      <dd className="font-mono font-bold">{order.paymentReference ?? "—"}</dd>
+                      <dd className="text-right font-mono font-bold">{order.paymentReference ?? "—"}</dd>
                     </div>
                   </>
                 ) : null}

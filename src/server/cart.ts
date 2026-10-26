@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { countDocumentPages } from "@/lib/editor/types";
 
 import {
   ensureCartSessionId,
@@ -63,7 +64,15 @@ export async function getCartDetail() {
         },
       },
       variant: { select: { id: true, label: true, widthMm: true, heightMm: true } },
-      design: { select: { id: true, title: true, previewPath: true, thumbnailPath: true } },
+      design: {
+        select: {
+          id: true,
+          title: true,
+          previewPath: true,
+          thumbnailPath: true,
+          document: true,
+        },
+      },
     },
   });
 
@@ -83,6 +92,7 @@ export async function getCartDetail() {
     variantLabel: row.variant.label,
     previewPath: row.design?.previewPath ?? row.design?.thumbnailPath ?? null,
     designTitle: row.design?.title ?? null,
+    pageCount: row.design ? countDocumentPages(row.design.document) : null,
   }));
 
   const subtotalMga = items.reduce((sum, item) => sum + item.lineTotalMga, 0);
@@ -107,6 +117,7 @@ type CartItemDetail = {
   variantLabel: string;
   previewPath: string | null;
   designTitle: string | null;
+  pageCount: number | null;
 };
 
 export async function getCartItemCount(): Promise<number> {

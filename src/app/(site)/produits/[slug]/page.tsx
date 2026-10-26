@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { BookOpen } from "lucide-react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
@@ -7,6 +8,13 @@ import { ProductPurchasePanel } from "@/components/product-purchase-panel";
 import { ProductThumb } from "@/components/product-thumb";
 import { productionNotices } from "@/lib/notices";
 import { formatMga } from "@/lib/format";
+import {
+  PHOTOBOOK_BASE_PRICE_MGA,
+  PHOTOBOOK_EXTRA_PAGE_MGA,
+  PHOTOBOOK_MIN_PAGES,
+  PHOTOBOOK_SLUG,
+  findCover,
+} from "@/lib/photobook";
 import { translate } from "@/lib/i18n";
 import { getLocale } from "@/lib/locale.server";
 import {
@@ -98,6 +106,7 @@ async function ProductDetail({
     (min, variant) => Math.min(min, variant.priceMga),
     Number.POSITIVE_INFINITY,
   );
+  const isPhotobook = product.slug === PHOTOBOOK_SLUG;
 
   return (
     <div className="container-page py-10">
@@ -153,19 +162,52 @@ async function ProductDetail({
 
           {/* Ces informations viennent de la base, pas de la mise en page. */}
           <div className="mt-6 border-t border-sand-200 pt-6">
-            <ProductPurchasePanel
-              productId={product.id}
-              productSlug={product.slug}
-              leadTimeDays={product.leadTimeDays}
-              variants={product.variants.map((variant) => ({
-                id: variant.id,
-                label: variant.label,
-                priceMga: variant.priceMga,
-                widthMm: variant.widthMm,
-                heightMm: variant.heightMm,
-                isDefault: variant.isDefault,
-              }))}
-            />
+            {isPhotobook ? (
+              <div className="space-y-4">
+                <div className="rounded-2xl border border-brand-200 bg-brand-50 p-5 dark:border-brand-800 dark:bg-brand-900/30">
+                  <p className="text-[11px] font-bold uppercase tracking-widest text-brand-700 dark:text-brand-200">
+                    A4 · A5 · A6 · Carré · {PHOTOBOOK_MIN_PAGES} pages incluses
+                  </p>
+                  <p className="mt-2 text-3xl font-black text-brand-800 dark:text-brand-100">
+                    {formatMga(PHOTOBOOK_BASE_PRICE_MGA)}
+                  </p>
+                  <p className="mt-1 text-sm text-ink-700">
+                    puis {formatMga(PHOTOBOOK_EXTRA_PAGE_MGA)} par page supplémentaire
+                  </p>
+                  <p className="mt-1 text-sm text-ink-700">
+                    Couverture moyen solide incluse · couverture solide +{" "}
+                    {formatMga(findCover("rigide").extraPriceMga)}
+                  </p>
+                </div>
+
+                <Link
+                  href="/creer"
+                  className="btn-primary w-full py-3 text-base"
+                >
+                  <BookOpen className="h-4 w-4" /> Créer mon photobook
+                </Link>
+
+                <p className="muted text-xs leading-relaxed">
+                  Choisissez le papier, le nombre de pages, l'orientation et la
+                  couverture dans l'assistant. Vous pourrez sauvegarder votre brouillon
+                  et le reprendre plus tard.
+                </p>
+              </div>
+            ) : (
+              <ProductPurchasePanel
+                productId={product.id}
+                productSlug={product.slug}
+                leadTimeDays={product.leadTimeDays}
+                variants={product.variants.map((variant) => ({
+                  id: variant.id,
+                  label: variant.label,
+                  priceMga: variant.priceMga,
+                  widthMm: variant.widthMm,
+                  heightMm: variant.heightMm,
+                  isDefault: variant.isDefault,
+                }))}
+              />
+            )}
           </div>
 
           <div className="mt-6 rounded-xl bg-sand-100 p-4">

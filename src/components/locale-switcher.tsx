@@ -9,7 +9,7 @@ export function LocaleSwitcher({ locale }: { locale: Locale }) {
       </span>
       <div
         aria-labelledby="locale-switcher-label"
-        className="flex rounded-lg border border-sand-300 bg-white p-0.5"
+        className="flex rounded-lg border border-sand-300 bg-card p-0.5"
         role="group"
       >
         {locales.map((option) => (

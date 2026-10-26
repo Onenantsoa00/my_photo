@@ -92,6 +92,7 @@ export async function listDesignsForUser(userId: string) {
       canvasHeight: true,
       thumbnailPath: true,
       previewPath: true,
+      document: true,
     },
   });
 }

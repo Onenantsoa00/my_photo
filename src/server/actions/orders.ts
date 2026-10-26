@@ -7,6 +7,7 @@ import { redirect } from "next/navigation";
 import { z } from "zod";
 
 import { prisma } from "@/lib/prisma";
+import { countDocumentPages } from "@/lib/editor/types";
 import type { TranslationKey } from "@/lib/i18n";
 import {
   PAYMENT_METHODS,
@@ -86,7 +87,15 @@ export async function createOrderAction(
     include: {
       product: { select: { id: true, nameFr: true, leadTimeDays: true } },
       variant: { select: { id: true, label: true } },
-      design: { select: { id: true, previewPath: true, thumbnailPath: true } },
+      design: {
+        select: {
+          id: true,
+          title: true,
+          previewPath: true,
+          thumbnailPath: true,
+          document: true,
+        },
+      },
     },
   });
 
@@ -133,6 +142,8 @@ export async function createOrderAction(
   }
 
   // ------------------------------------------------------------------ paiement
+  // Paiement statique : uniquement MVOLA ou Orange Money, avec une référence
+  // de transaction obligatoire. Aucun paiement à la livraison ni virement.
   let paymentReference = data.paymentReference?.trim() || null;
   const paymentTarget = paymentTargetFor(method);
 
@@ -143,6 +154,13 @@ export async function createOrderAction(
   } else {
     paymentReference = null;
   }
+
+  const paymentMotif =
+    cartItems
+      .map((item) => item.design?.title?.trim())
+      .filter((title): title is string => Boolean(title))
+      .join(", ")
+      .slice(0, 160) || "Photobook MyPhoto Mada";
 
   // ------------------------------------------------------------------- totaux
   const subtotalMga = cartItems.reduce(
@@ -187,7 +205,9 @@ export async function createOrderAction(
               productId: item.productId,
               designId: item.designId,
               productName: item.product.nameFr,
-              variantLabel: item.variant.label,
+              variantLabel: item.design
+                ? `${item.variant.label} · ${countDocumentPages(item.design.document)} pages`
+                : item.variant.label,
               quantity: item.quantity,
               unitPriceMga: item.unitPriceMga,
               lineTotalMga: item.unitPriceMga * item.quantity,
@@ -200,10 +220,7 @@ export async function createOrderAction(
               {
                 status: "PENDING",
                 actor: "customer",
-                note:
-                  method === "CASH_ON_DELIVERY"
-                    ? "Commande reçue, paiement à la livraison"
-                    : `Commande reçue, paiement ${method} déclaré (réf. ${paymentReference})`,
+                note: `Commande reçue · paiement ${method} · motif : ${paymentMotif} · réf. ${paymentReference}`,
               },
             ],
           },

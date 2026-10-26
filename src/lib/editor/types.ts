@@ -4,11 +4,20 @@
  * Il est volontairement découplé de Konva : le document est du JSON sérialisable,
  * stocké tel quel dans `Design.document`, ce qui permet de le rejouer côté serveur
  * (aperçus) ou d'échanger le moteur de rendu sans migration de données.
+ *
+ * Version 2 : un photobook est un livre de plusieurs pages. Chaque page porte
+ * son propre fond et ses propres calques, le plan de travail (largeur/hauteur)
+ * restant commun à tout le livre.
  */
 
-export const DOCUMENT_VERSION = 1;
+import { normalizeBackground, type PageBackground } from "@/lib/editor/background";
+
+export const DOCUMENT_VERSION = 2;
 
 export type ShapeKind = "rect" | "ellipse" | "triangle" | "star" | "line";
+
+/** Découpe appliquée à une photo. « none » garde le cadre rectangulaire. */
+export type ImageCrop = "none" | "rounded" | "circle" | "heart" | "star" | "diamond";
 
 export type TextAlign = "left" | "center" | "right";
 
@@ -66,6 +75,8 @@ export type ImageLayer = LayerBase & {
   /** Identifiant du fichier téléversé, pour rattacher la création à la photo. */
   uploadPath?: string;
   cornerRadius: number;
+  /** Forme de découpe : cercle, cœur, étoile, losange… */
+  crop: ImageCrop;
   filters: ImageFilters;
 };
 
@@ -80,33 +91,104 @@ export type ShapeLayer = LayerBase & {
 
 export type Layer = TextLayer | ImageLayer | ShapeLayer;
 
+/** Une page du livre : fond + calques. */
+export type EditorPage = {
+  id: string;
+  background: PageBackground;
+  layers: Layer[];
+};
+
 export type EditorDocument = {
   version: number;
   canvas: {
     width: number;
     height: number;
-    background: string;
+    /** Référence du format commandé, pour retrouver le bon format à la reprise. */
+    variantSku?: string;
   };
-  layers: Layer[];
+  pages: EditorPage[];
 };
 
-export type EditorDocumentInput = Partial<EditorDocument> & {
-  canvas?: Partial<EditorDocument["canvas"]>;
+export type EditorDocumentInput = {
+  version?: number;
+  canvas?: Partial<EditorDocument["canvas"]> & { background?: string };
+  pages?: unknown;
+  /** Ancien format (version 1) : une seule page dans `layers`. */
+  layers?: unknown;
 };
 
-export function emptyDocument(width = 1200, height = 800): EditorDocument {
-  return {
-    version: DOCUMENT_VERSION,
-    canvas: { width, height, background: "#ffffff" },
-    layers: [],
-  };
-}
+export type EditorPageInput = {
+  id?: unknown;
+  background?: unknown;
+  layers?: unknown;
+};
 
-export function createId(): string {
+export function createId(prefix = "id"): string {
   if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
     return crypto.randomUUID();
   }
-  return `layer_${Math.random().toString(36).slice(2, 10)}`;
+  return `${prefix}_${Math.random().toString(36).slice(2, 10)}`;
+}
+
+export function createPage(background: string | PageBackground = "#ffffff"): EditorPage {
+  return { id: createId("page"), background: normalizeBackground(background), layers: [] };
+}
+
+export function emptyDocument(
+  width = 1200,
+  height = 800,
+  pageCount = 1,
+): EditorDocument {
+  const count = Math.max(1, Math.trunc(pageCount) || 1);
+  return {
+    version: DOCUMENT_VERSION,
+    canvas: { width, height },
+    pages: Array.from({ length: count }, () => createPage()),
+  };
+}
+
+/** Garantit un nombre minimum de pages (le photobook en exige 20). */
+export function ensurePageCount(
+  document: EditorDocument,
+  minimumPages: number,
+): EditorDocument {
+  const minimum = Math.max(1, Math.trunc(minimumPages) || 1);
+  if (document.pages.length >= minimum) return document;
+
+  const background = document.pages[0]?.background;
+  const missing = minimum - document.pages.length;
+
+  return {
+    ...document,
+    pages: [
+      ...document.pages,
+      ...Array.from({ length: missing }, () => createPage(background)),
+    ],
+  };
+}
+
+/** Copie profonde d'une page, avec de nouveaux identifiants de calques. */
+export function duplicatePage(page: EditorPage): EditorPage {
+  return {
+    id: createId("page"),
+    background: page.background,
+    layers: page.layers.map((layer) => ({
+      ...layer,
+      id: createId(layer.type),
+      filters: layer.type === "image" ? { ...layer.filters } : undefined,
+    })) as Layer[],
+  };
+}
+
+export function countDocumentPages(input: unknown): number {
+  if (!input || typeof input !== "object") return 1;
+  const pages = (input as { pages?: unknown }).pages;
+  if (Array.isArray(pages) && pages.length > 0) return pages.length;
+  return 1;
+}
+
+export function documentHasContent(document: EditorDocument): boolean {
+  return document.pages.some((page) => page.layers.length > 0);
 }
 
 /** Normalise un document venu du client ou de la base. */
@@ -114,27 +196,64 @@ export function normalizeDocument(
   input: unknown,
   fallbackWidth = 1200,
   fallbackHeight = 800,
+  minimumPages = 1,
 ): EditorDocument {
   if (!input || typeof input !== "object") {
-    return emptyDocument(fallbackWidth, fallbackHeight);
+    return emptyDocument(fallbackWidth, fallbackHeight, minimumPages);
   }
 
   const candidate = input as EditorDocumentInput;
-  const canvas: Partial<EditorDocument["canvas"]> = candidate.canvas ?? {};
+  const canvas: Partial<EditorDocument["canvas"]> & { background?: unknown } =
+    candidate.canvas ?? {};
 
-  const layers = Array.isArray(candidate.layers)
-    ? candidate.layers.filter(isLayer).map(withDefaults)
+  const width = positiveNumber(canvas.width, fallbackWidth);
+  const height = positiveNumber(canvas.height, fallbackHeight);
+  const variantSku = typeof canvas.variantSku === "string" && canvas.variantSku
+    ? canvas.variantSku
+    : undefined;
+
+  // Version 2 : pages explicites.
+  let pages: EditorPage[] = Array.isArray(candidate.pages)
+    ? candidate.pages.map((page) => normalizePage(page, canvas.background))
     : [];
 
-  return {
+  // Version 1 : un seul jeu de calques dans `document.layers`.
+  if (pages.length === 0) {
+    const legacyLayers = Array.isArray(candidate.layers)
+      ? candidate.layers.filter(isLayer).map(withDefaults)
+      : [];
+
+    pages = [
+      {
+        id: createId("page"),
+        background: normalizeBackground(canvas.background),
+        layers: legacyLayers,
+      },
+    ];
+  }
+
+  const document: EditorDocument = {
     version: DOCUMENT_VERSION,
-    canvas: {
-      width: positiveNumber(canvas.width, fallbackWidth),
-      height: positiveNumber(canvas.height, fallbackHeight),
-      background:
-        typeof canvas.background === "string" ? canvas.background : "#ffffff",
-    },
-    layers,
+    canvas: { width, height, ...(variantSku ? { variantSku } : {}) },
+    pages,
+  };
+
+  return ensurePageCount(document, minimumPages);
+}
+
+function normalizePage(value: unknown, fallbackBackground?: unknown): EditorPage {
+  const candidate =
+    value && typeof value === "object" ? (value as EditorPageInput) : {};
+
+  return {
+    id:
+      typeof candidate.id === "string" && candidate.id
+        ? candidate.id
+        : createId("page"),
+    background: normalizeBackground(candidate.background, fallbackBackground),
+    layers: Array.isArray(candidate.layers)
+      ? candidate.layers.filter(isLayer).map(withDefaults)
+      : [],
   };
 }
 
@@ -152,7 +271,7 @@ function isLayer(value: unknown): value is Layer {
 
 function withDefaults(layer: Layer): Layer {
   const base = {
-    id: typeof layer.id === "string" && layer.id ? layer.id : createId(),
+    id: typeof layer.id === "string" && layer.id ? layer.id : createId("layer"),
     name: typeof layer.name === "string" ? layer.name : labelFor(layer),
     x: numberOr(layer.x, 0),
     y: numberOr(layer.y, 0),
@@ -171,10 +290,12 @@ function withDefaults(layer: Layer): Layer {
       text: typeof layer.text === "string" ? layer.text : "",
       fontFamily: layer.fontFamily || "Inter, sans-serif",
       fontSize: Math.max(4, numberOr(layer.fontSize, 48)),
-      fontStyle: layer.fontStyle === "bold" || layer.fontStyle === "italic"
-        ? layer.fontStyle
-        : "normal",
-      align: layer.align === "center" || layer.align === "right" ? layer.align : "left",
+      fontStyle:
+        layer.fontStyle === "bold" || layer.fontStyle === "italic"
+          ? layer.fontStyle
+          : "normal",
+      align:
+        layer.align === "center" || layer.align === "right" ? layer.align : "left",
       fill: layer.fill || "#111827",
       lineHeight: numberOr(layer.lineHeight, 1.2),
       letterSpacing: numberOr(layer.letterSpacing, 0),
@@ -186,8 +307,10 @@ function withDefaults(layer: Layer): Layer {
       ...base,
       type: "image",
       src: typeof layer.src === "string" ? layer.src : "",
-      uploadPath: typeof layer.uploadPath === "string" ? layer.uploadPath : undefined,
+      uploadPath:
+        typeof layer.uploadPath === "string" ? layer.uploadPath : undefined,
       cornerRadius: Math.max(0, numberOr(layer.cornerRadius, 0)),
+      crop: isImageCrop(layer.crop) ? layer.crop : "none",
       filters: {
         brightness: clamp(numberOr(layer.filters?.brightness, 0), -1, 1),
         contrast: clamp(numberOr(layer.filters?.contrast, 0), -100, 100),
@@ -217,6 +340,17 @@ function isShapeKind(value: unknown): value is ShapeKind {
     value === "triangle" ||
     value === "star" ||
     value === "line"
+  );
+}
+
+export function isImageCrop(value: unknown): value is ImageCrop {
+  return (
+    value === "none" ||
+    value === "rounded" ||
+    value === "circle" ||
+    value === "heart" ||
+    value === "star" ||
+    value === "diamond"
   );
 }
 

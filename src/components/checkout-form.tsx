@@ -1,15 +1,15 @@
 "use client";
 
+import { Check, Copy, ShieldCheck } from "lucide-react";
 import { useActionState, useMemo, useState } from "react";
 import { useFormStatus } from "react-dom";
 
 import { useT } from "@/components/locale-provider";
 import { formatMga } from "@/lib/format";
 import {
+  PAYMENT_ACCOUNTS,
+  PAYMENT_ACCOUNT_NAME,
   PAYMENT_METHODS,
-  PAYMENT_METHOD_LABEL_KEY,
-  paymentMethodIcon,
-  requiresTransactionReference,
   type PaymentMethodValue,
 } from "@/lib/payment";
 import { createOrderAction, type CheckoutState } from "@/server/actions/orders";
@@ -26,6 +26,8 @@ export type CheckoutFormProps = {
   zones: CheckoutZone[];
   subtotalMga: number;
   itemCount: number;
+  /** Nom du projet, utilisé comme motif du transfert Mobile Money. */
+  paymentMotif: string;
   paymentTargets: Record<PaymentMethodValue, string | null>;
   defaults: {
     customerName: string;
@@ -63,18 +65,20 @@ export function CheckoutForm({
   zones,
   subtotalMga,
   itemCount,
+  paymentMotif,
   paymentTargets,
   defaults,
 }: CheckoutFormProps) {
   const t = useT();
   const [state, formAction] = useActionState(createOrderAction, INITIAL);
+  const [copied, setCopied] = useState(false);
 
   const [deliveryMode, setDeliveryMode] = useState<"PICKUP" | "HOME_DELIVERY">(
     "HOME_DELIVERY",
   );
   const [zoneId, setZoneId] = useState<string>(zones[0]?.id ?? "");
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethodValue>(
-    "CASH_ON_DELIVERY",
+    PAYMENT_METHODS[0],
   );
 
   const selectedZone = useMemo(
@@ -84,8 +88,19 @@ export function CheckoutForm({
 
   const deliveryFee = deliveryMode === "HOME_DELIVERY" ? (selectedZone?.feeMga ?? 0) : 0;
   const total = subtotalMga + deliveryFee;
-  const needsReference = requiresTransactionReference(paymentMethod);
   const merchantTarget = paymentTargets[paymentMethod];
+  const account = PAYMENT_ACCOUNTS[paymentMethod as keyof typeof PAYMENT_ACCOUNTS];
+
+  const copyNumber = async () => {
+    if (!merchantTarget) return;
+    try {
+      await navigator.clipboard.writeText(merchantTarget);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1800);
+    } catch {
+      setCopied(false);
+    }
+  };
 
   return (
     <form action={formAction} className="grid gap-6 lg:grid-cols-[1fr_20rem]">
@@ -220,69 +235,120 @@ export function CheckoutForm({
 
         {/* ---------------------------------------------------------- Paiement */}
         <section className="card p-5">
-          <h2 className="font-bold">{t("checkout.payment")}</h2>
-
-          <div className="mt-4 grid gap-2 sm:grid-cols-2">
-            {PAYMENT_METHODS.map((method) => (
-              <label
-                key={method}
-                className={
-                  paymentMethod === method
-                    ? "flex cursor-pointer items-center gap-3 rounded-xl border-2 border-brand-600 bg-brand-50 px-3 py-2.5"
-                    : "flex cursor-pointer items-center gap-3 rounded-xl border border-sand-300 px-3 py-2.5 hover:border-brand-300"
-                }
-              >
-                <input
-                  type="radio"
-                  name="paymentMethod"
-                  value={method}
-                  checked={paymentMethod === method}
-                  onChange={() => setPaymentMethod(method)}
-                  className="h-4 w-4 accent-brand-600"
-                />
-                <span className="text-sm font-semibold">
-                  {paymentMethodIcon(method)} {t(PAYMENT_METHOD_LABEL_KEY[method])}
-                </span>
-              </label>
-            ))}
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h2 className="font-bold">{t("checkout.payment")}</h2>
+            <span className="badge-brand inline-flex items-center gap-1">
+              <ShieldCheck className="h-3 w-3" /> Mobile Money
+            </span>
           </div>
 
-          {paymentMethod === "CASH_ON_DELIVERY" ? (
-            <p className="muted mt-3 text-sm">{t("checkout.codHint")}</p>
-          ) : (
-            <div className="mt-4 rounded-xl bg-sand-100 p-4">
-              <p className="text-sm text-ink-700">{t("checkout.mobileMoneyHint")}</p>
+          <div className="mt-4 grid gap-2 sm:grid-cols-2">
+            {PAYMENT_METHODS.map((method) => {
+              const methodAccount = PAYMENT_ACCOUNTS[method];
+              const active = paymentMethod === method;
 
-              {merchantTarget ? (
-                <p className="mt-3 flex flex-wrap items-center gap-2">
-                  <span className="muted text-xs uppercase tracking-wide">
-                    {t("checkout.merchantNumber")}
-                  </span>
-                  <strong className="rounded-lg bg-white px-3 py-1 font-mono text-sm ring-1 ring-sand-300">
-                    {merchantTarget}
-                  </strong>
-                  <span className="text-xs text-ink-500">
-                    · {t("order.sentAmount")} {formatMga(total)}
-                  </span>
-                </p>
-              ) : null}
-
-              {needsReference ? (
-                <div className="mt-4">
-                  <label className="label" htmlFor="paymentReference">
-                    {t("checkout.transactionRef")}
-                  </label>
+              return (
+                <label
+                  key={method}
+                  className={
+                    active
+                      ? "flex cursor-pointer items-center gap-3 rounded-xl border-2 border-brand-600 bg-brand-50 px-3 py-2.5 dark:bg-brand-900/30"
+                      : "flex cursor-pointer items-center gap-3 rounded-xl border border-sand-300 bg-card px-3 py-2.5 hover:border-brand-300"
+                  }
+                >
                   <input
-                    id="paymentReference"
-                    name="paymentReference"
-                    className="input"
-                    placeholder={t("checkout.transactionRefHint")}
+                    type="radio"
+                    name="paymentMethod"
+                    value={method}
+                    checked={active}
+                    onChange={() => setPaymentMethod(method)}
+                    className="h-4 w-4 accent-brand-600"
                   />
-                  <FieldError code={state.fieldErrors?.paymentReference} />
-                </div>
-              ) : null}
+                  <span
+                    className={`grid h-9 w-9 shrink-0 place-items-center rounded-lg text-[11px] font-black ${
+                      method === "MVOLA"
+                        ? "bg-yellow-100 text-yellow-800 dark:bg-yellow-950 dark:text-yellow-200"
+                        : "bg-orange-100 text-orange-800 dark:bg-orange-950 dark:text-orange-200"
+                    }`}
+                  >
+                    {method === "MVOLA" ? "MV" : "OM"}
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-sm font-bold">{methodAccount.labelFr}</span>
+                    <span className="block font-mono text-[11px] text-ink-500">
+                      {methodAccount.number}
+                    </span>
+                  </span>
+                  {active ? <Check className="h-4 w-4 shrink-0 text-brand-600" /> : null}
+                </label>
+              );
+            })}
+          </div>
+
+          <div className="mt-4 overflow-hidden rounded-2xl border border-brand-200 bg-gradient-to-br from-brand-50 to-sand-50 dark:border-brand-800 dark:from-brand-900/40 dark:to-sand-100">
+            <div className="flex flex-wrap items-center gap-3 border-b border-brand-200/70 p-4 dark:border-brand-800">
+              <div className="min-w-0 flex-1">
+                <p className="text-[10px] font-bold uppercase tracking-widest text-brand-700 dark:text-brand-200">
+                  {t("checkout.merchantNumber")} · {account.labelFr}
+                </p>
+                <p className="mt-1 font-mono text-xl font-black tracking-wide text-ink-900">
+                  {merchantTarget ?? "—"}
+                </p>
+                <p className="text-xs text-ink-500">{PAYMENT_ACCOUNT_NAME}</p>
+              </div>
+              <button type="button" onClick={copyNumber} className="btn-outline btn-sm">
+                {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+                {copied ? t("common.copied") : t("common.copy")}
+              </button>
             </div>
-          )}
+
+            <dl className="grid gap-3 p-4 text-xs sm:grid-cols-2">
+              <div>
+                <dt className="text-[10px] font-bold uppercase tracking-wide text-ink-500">
+                  {t("checkout.paymentMotif")}
+                </dt>
+                <dd className="mt-0.5 font-semibold text-ink-900">{paymentMotif}</dd>
+              </div>
+              <div>
+                <dt className="text-[10px] font-bold uppercase tracking-wide text-ink-500">
+                  {t("order.sentAmount")}
+                </dt>
+                <dd className="mt-0.5 text-base font-black text-brand-700 dark:text-brand-300">
+                  {formatMga(total)}
+                </dd>
+              </div>
+            </dl>
+          </div>
+
+          <ol className="mt-4 space-y-2 text-xs text-ink-700">
+            {[
+              t("checkout.step1"),
+              t("checkout.step2"),
+              t("checkout.step3"),
+              t("checkout.step4"),
+            ].map((step, index) => (
+              <li key={step} className="flex items-start gap-2">
+                <span className="grid h-5 w-5 shrink-0 place-items-center rounded-full bg-brand-600 text-[10px] font-bold text-white">
+                  {index + 1}
+                </span>
+                <span className="pt-0.5 leading-relaxed">{step}</span>
+              </li>
+            ))}
+          </ol>
+
+          <div className="mt-4">
+            <label className="label" htmlFor="paymentReference">
+              {t("checkout.transactionRef")}
+            </label>
+            <input
+              id="paymentReference"
+              name="paymentReference"
+              className="input"
+              required
+              placeholder={t("checkout.transactionRefHint")}
+            />
+            <FieldError code={state.fieldErrors?.paymentReference} />
+          </div>
         </section>
 
         {/* --------------------------------------------------------------- Note */}

@@ -4,7 +4,13 @@ import { revalidatePath } from "next/cache";
 import sharp from "sharp";
 
 import { prisma } from "@/lib/prisma";
-import { normalizeDocument } from "@/lib/editor/types";
+import { documentHasContent, normalizeDocument } from "@/lib/editor/types";
+import {
+  PHOTOBOOK_MIN_PAGES,
+  coverExtraFromSku,
+  photobookPriceBreakdown,
+  photobookPriceMga,
+} from "@/lib/photobook";
 import { buildRelativePath, shortHash, writeStorageFile } from "@/lib/storage";
 import type { TranslationKey } from "@/lib/i18n";
 import { getActiveCart } from "@/server/cart";
@@ -17,6 +23,8 @@ export type SaveDesignInput = {
   /** Aperçu PNG encodé en data URL, produit par le canvas Konva. */
   previewDataUrl?: string | null;
   productId?: string | null;
+  /** Référence du format choisi : porte le supplément de couverture. */
+  variantSku?: string | null;
   targetWidthMm?: number | null;
   targetHeightMm?: number | null;
 };
@@ -76,14 +84,33 @@ export async function saveDesignAction(
   // s'il n'a pas encore de panier : c'est ce qui rattache la création à lui.
   const owner = await resolveDesignOwner({ create: true });
   const ownerWhere = designOwnerWhere(owner);
-  const document = normalizeDocument(input.document);
-
-  if (document.layers.length === 0) {
-    return { ok: false, errorKey: "editor.noLayers" };
-  }
+  // Un brouillon peut être enregistré même incomplet : c'est justement son but.
+  // Le nombre minimum de pages est en revanche toujours respecté.
+  const normalized = normalizeDocument(
+    input.document,
+    1200,
+    800,
+    PHOTOBOOK_MIN_PAGES,
+  );
+  // La référence du format est conservée dans le document : à la reprise, le
+  // format retrouvé (couverture comprise) est celui réellement choisi.
+  const document: typeof normalized = {
+    ...normalized,
+    canvas: {
+      ...normalized.canvas,
+      ...(input.variantSku ? { variantSku: input.variantSku } : {}),
+    },
+  };
 
   if (!ownerWhere) {
     return { ok: false, errorKey: "editor.saveFailed" };
+  }
+
+  // Une création sans aucun contenu n'a rien à reprendre : on refuse
+  // d'encombrer la liste des brouillons. Une création déjà enregistrée reste
+  // modifiable (le client peut vider sa page et recommencer).
+  if (!input.designId && !documentHasContent(document)) {
+    return { ok: false, errorKey: "editor.emptyDesign" };
   }
 
   const title = input.title.trim().slice(0, 120) || "Création sans titre";
@@ -128,6 +155,7 @@ export async function saveDesignAction(
 
     if (existing) {
       await prisma.design.update({ where: { id: existing.id }, data: shared });
+      await syncCartPrice(existing.id, document.pages.length);
       revalidatePath("/compte");
       return { ok: true, designId: existing.id };
     }
@@ -142,8 +170,39 @@ export async function saveDesignAction(
     select: { id: true },
   });
 
+  await syncCartPrice(created.id, document.pages.length);
   revalidatePath("/compte");
   return { ok: true, designId: created.id };
+}
+
+/**
+ * Le nombre de pages a pu changer depuis l'ajout au panier : la ligne liée à
+ * la création suit le tarif page par page (couverture comprise), sans attendre
+ * une nouvelle commande.
+ */
+async function syncCartPrice(designId: string, pageCount: number) {
+  const rows = await prisma.cartItem.findMany({
+    where: { designId },
+    select: { id: true, variant: { select: { sku: true } } },
+  });
+
+  if (rows.length === 0) return;
+
+  await prisma.$transaction(
+    rows.map((row) =>
+      prisma.cartItem.update({
+        where: { id: row.id },
+        data: {
+          unitPriceMga: photobookPriceMga(
+            pageCount,
+            coverExtraFromSku(row.variant.sku),
+          ),
+        },
+      }),
+    ),
+  );
+
+  revalidatePath("/panier");
 }
 
 export type OrderDesignResult = {
@@ -164,11 +223,12 @@ export async function orderDesignAction(input: {
   previewDataUrl?: string | null;
   productId: string;
   variantId: string;
+  variantSku?: string | null;
   quantity: number;
 }): Promise<OrderDesignResult> {
   const variant = await prisma.productVariant.findFirst({
     where: { id: input.variantId, productId: input.productId, isActive: true },
-    select: { id: true, priceMga: true },
+    select: { id: true, sku: true, priceMga: true, widthMm: true, heightMm: true },
   });
 
   if (!variant) {
@@ -176,13 +236,29 @@ export async function orderDesignAction(input: {
   }
 
   const quantity = Math.max(1, Math.min(500, Math.trunc(input.quantity) || 1));
+  const document = normalizeDocument(
+    input.document,
+    1200,
+    800,
+    PHOTOBOOK_MIN_PAGES,
+  );
+  // Le prix d'un photobook dépend du nombre de pages et de la couverture,
+  // jamais du prix figé du format : le serveur recalcule donc à partir du
+  // document enregistré et de la référence du format.
+  const unitPriceMga = photobookPriceMga(
+    document.pages.length,
+    coverExtraFromSku(variant.sku),
+  );
 
   const saved = await saveDesignAction({
     designId: input.designId,
     title: input.title,
-    document: input.document,
+    document,
     previewDataUrl: input.previewDataUrl,
     productId: input.productId,
+    variantSku: variant.sku,
+    targetWidthMm: variant.widthMm,
+    targetHeightMm: variant.heightMm,
   });
 
   if (!saved.ok || !saved.designId) {
@@ -206,7 +282,12 @@ export async function orderDesignAction(input: {
   if (existing) {
     await prisma.cartItem.update({
       where: { id: existing.id },
-      data: { quantity: Math.min(500, existing.quantity + quantity) },
+      data: {
+        quantity: Math.min(500, existing.quantity + quantity),
+        // Le client a pu ajouter des pages depuis le premier ajout : le prix
+        // de la ligne suit le document à jour.
+        unitPriceMga,
+      },
     });
   } else {
     await prisma.cartItem.create({
@@ -216,7 +297,7 @@ export async function orderDesignAction(input: {
         variantId: variant.id,
         designId: saved.designId,
         quantity,
-        unitPriceMga: variant.priceMga,
+        unitPriceMga,
       },
     });
   }

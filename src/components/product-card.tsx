@@ -39,7 +39,7 @@ export function ProductCard({
           locale={locale}
           className="transition-transform duration-300 group-hover:scale-105"
         />
-        <span className="absolute left-3 top-3 rounded-full bg-white/90 px-2.5 py-1 text-[11px] font-bold text-ink-700 shadow-sm">
+        <span className="absolute left-3 top-3 rounded-full bg-card/90 px-2.5 py-1 text-[11px] font-bold text-ink-700 shadow-sm backdrop-blur">
           {categoryName(product.category, locale)}
         </span>
       </div>

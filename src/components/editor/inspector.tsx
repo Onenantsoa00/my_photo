@@ -3,6 +3,7 @@
 import { useT } from "@/components/locale-provider";
 import { FONT_STACKS } from "@/lib/editor/templates";
 import type {
+  ImageCrop,
   ImageFilters,
   ImageLayer,
   Layer,
@@ -22,6 +23,33 @@ export type InspectorProps = {
 };
 
 const SHAPES: ShapeKind[] = ["rect", "ellipse", "triangle", "star", "line"];
+
+const IMAGE_CROPS: ImageCrop[] = [
+  "none",
+  "rounded",
+  "circle",
+  "heart",
+  "star",
+  "diamond",
+];
+
+const CROP_GLYPH: Record<ImageCrop, string> = {
+  none: "▭",
+  rounded: "▢",
+  circle: "◯",
+  heart: "♥",
+  star: "★",
+  diamond: "◆",
+};
+
+const CROP_LABEL_KEY: Record<ImageCrop, `editor.crop.${ImageCrop}`> = {
+  none: "editor.crop.none",
+  rounded: "editor.crop.rounded",
+  circle: "editor.crop.circle",
+  heart: "editor.crop.heart",
+  star: "editor.crop.star",
+  diamond: "editor.crop.diamond",
+};
 
 const SHAPE_LABEL_KEY: Record<ShapeKind, "editor.shape.rect" | "editor.shape.ellipse" | "editor.shape.triangle" | "editor.shape.star" | "editor.shape.line"> = {
   rect: "editor.shape.rect",
@@ -416,17 +444,55 @@ function ImageSection({
         {t("editor.uploadPhoto")}
       </button>
 
-      <SliderField
-        label={t("editor.cornerRadius")}
-        value={layer.cornerRadius}
-        min={0}
-        max={400}
-        step={1}
-        display={`${Math.round(layer.cornerRadius)} px`}
-        onLiveChange={(value) => live({ cornerRadius: value })}
-        onGestureStart={onGestureStart}
-        onGestureEnd={onGestureEnd}
-      />
+      <div>
+        <span className="mb-1 block text-[11px] font-medium text-ink-500">
+          {t("editor.photoShape")}
+        </span>
+        <div className="grid grid-cols-6 gap-1">
+          {IMAGE_CROPS.map((crop) => (
+            <button
+              key={crop}
+              type="button"
+              title={t(CROP_LABEL_KEY[crop])}
+              aria-pressed={layer.crop === crop}
+              onClick={() =>
+                onPatch(layer.id, {
+                  crop,
+                  ...(crop === "rounded"
+                    ? {
+                        cornerRadius: Math.max(
+                          layer.cornerRadius,
+                          Math.round(Math.min(layer.width, layer.height) * 0.16),
+                        ),
+                      }
+                    : {}),
+                })
+              }
+              className={`grid h-8 place-items-center rounded-lg border text-sm ${
+                layer.crop === crop
+                  ? "border-brand-600 bg-brand-50 text-brand-800 dark:bg-brand-900 dark:text-brand-100"
+                  : "border-sand-300 bg-card hover:bg-sand-100 dark:border-sand-300 dark:bg-sand-100"
+              }`}
+            >
+              {CROP_GLYPH[crop]}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {layer.crop === "none" || layer.crop === "rounded" ? (
+        <SliderField
+          label={t("editor.cornerRadius")}
+          value={layer.cornerRadius}
+          min={0}
+          max={400}
+          step={1}
+          display={`${Math.round(layer.cornerRadius)} px`}
+          onLiveChange={(value) => live({ cornerRadius: value })}
+          onGestureStart={onGestureStart}
+          onGestureEnd={onGestureEnd}
+        />
+      ) : null}
 
       <Group title={t("editor.filters")}>
         <SliderField
@@ -533,7 +599,7 @@ function ShapeSection({
             className={`grid h-8 place-items-center rounded-lg border text-xs ${
               layer.shape === shape
                 ? "border-brand-600 bg-brand-50 text-brand-800"
-                : "border-sand-300 bg-white hover:bg-sand-100"
+                : "border-sand-300 bg-card hover:bg-sand-100"
             }`}
           >
             {shape === "rect"

@@ -72,7 +72,7 @@ export function ProductPurchasePanel({
                 className={
                   active
                     ? "flex items-center justify-between rounded-xl border-2 border-brand-600 bg-brand-50 px-3 py-2.5 text-left"
-                    : "flex items-center justify-between rounded-xl border border-sand-300 bg-white px-3 py-2.5 text-left hover:border-brand-300"
+                    : "flex items-center justify-between rounded-xl border border-sand-300 bg-card px-3 py-2.5 text-left hover:border-brand-300"
                 }
               >
                 <span className="text-sm font-semibold">{variant.label}</span>

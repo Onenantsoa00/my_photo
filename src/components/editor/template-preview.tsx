@@ -1,6 +1,7 @@
 "use client";
 
-import type { EditorDocument, Layer } from "@/lib/editor/types";
+import { backgroundToCss } from "@/lib/editor/background";
+import type { EditorDocument, ImageCrop, Layer } from "@/lib/editor/types";
 
 /**
  * Rendu CSS d'un document de l'atelier, sans Konva.
@@ -12,11 +13,14 @@ import type { EditorDocument, Layer } from "@/lib/editor/types";
 export function TemplatePreview({
   document,
   width = 260,
+  pageIndex = 0,
 }: {
   document: EditorDocument;
   width?: number;
+  pageIndex?: number;
 }) {
   const scale = width / document.canvas.width;
+  const page = document.pages[Math.min(pageIndex, document.pages.length - 1)];
 
   return (
     <div
@@ -24,14 +28,35 @@ export function TemplatePreview({
       style={{
         width,
         height: document.canvas.height * scale,
-        background: document.canvas.background,
+        background: page ? backgroundToCss(page.background) : "#ffffff",
       }}
     >
-      {document.layers.map((layer) => (
+      {(page?.layers ?? []).map((layer) => (
         <PreviewLayer key={layer.id} layer={layer} scale={scale} />
       ))}
     </div>
   );
+}
+
+function cropStyle(crop: ImageCrop): React.CSSProperties {
+  switch (crop) {
+    case "circle":
+      return { borderRadius: "50%" };
+    case "heart":
+      return {
+        clipPath:
+          "polygon(50% 92%, 6% 54%, 2% 26%, 12% 8%, 30% 4%, 42% 10%, 50% 22%, 58% 10%, 70% 4%, 88% 8%, 98% 26%, 94% 54%)",
+      };
+    case "star":
+      return {
+        clipPath:
+          "polygon(50% 0%, 61% 35%, 98% 35%, 68% 57%, 79% 91%, 50% 70%, 21% 91%, 32% 57%, 2% 35%, 39% 35%)",
+      };
+    case "diamond":
+      return { clipPath: "polygon(50% 0%, 100% 50%, 50% 100%, 0% 50%)" };
+    default:
+      return {};
+  }
 }
 
 function PreviewLayer({ layer, scale }: { layer: Layer; scale: number }) {
@@ -43,7 +68,6 @@ function PreviewLayer({ layer, scale }: { layer: Layer; scale: number }) {
     height: layer.height * scale,
     opacity: layer.opacity,
     transform: `rotate(${layer.rotation}deg)`,
-    borderRadius: "cornerRadius" in layer ? layer.cornerRadius * scale : 0,
     overflow: "hidden",
   };
 
@@ -68,12 +92,21 @@ function PreviewLayer({ layer, scale }: { layer: Layer; scale: number }) {
   }
 
   if (layer.type === "image") {
+    const crop = cropStyle(layer.crop);
+
     return (
       <div
         style={{
           ...style,
-          background: "repeating-linear-gradient(45deg,#e2e8f0 0 8px,#f1f5f9 8px 16px)",
-          border: "1px dashed #94a3b8",
+          borderRadius:
+            layer.crop === "circle"
+              ? "50%"
+              : layer.crop === "rounded"
+                ? Math.min(layer.width, layer.height) * scale * 0.2
+                : 0,
+          ...crop,
+          background:
+            "linear-gradient(135deg,#dbeafe 0%,#fce7f3 55%,#dcfce7 100%)",
         }}
       />
     );

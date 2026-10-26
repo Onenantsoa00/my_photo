@@ -44,6 +44,24 @@ async function sql(text, params = []) {
   return result.rows;
 }
 
+/**
+ * Produit de contrôle des sondes de panier.
+ *
+ * Le catalogue ne vend plus que le photobook, or les sondes B2 à B20 portent
+ * sur un produit classique (celui qui affiche le panneau d'achat). On active
+ * donc le temps de la sonde un produit déjà présent en base, puis on le
+ * remet dans son état d'origine.
+ */
+const PROBE_PRODUCT_SLUG = "tirage-standard";
+const PROBE_TRANSACTION_REF = "9876543210";
+
+async function setProbeProductActive(isActive) {
+  await sql('update "Product" set "isActive" = $1, "updatedAt" = now() where slug = $2', [
+    isActive,
+    PROBE_PRODUCT_SLUG,
+  ]);
+}
+
 async function clickByText(page, text, selector = "button, a") {
   const clicked = await page.evaluate(
     (needle, sel) => {
@@ -450,6 +468,16 @@ async function signedInPage(browser, email, password) {
 }
 
 async function browserProbes(browser) {
+  await setProbeProductActive(true);
+  try {
+    await runBrowserProbes(browser);
+  } finally {
+    // Le catalogue doit repartir exactement comme il était : photobook seul.
+    await setProbeProductActive(false);
+  }
+}
+
+async function runBrowserProbes(browser) {
   const guest = await browser.createBrowserContext();
   const page = await guest.newPage();
 
@@ -527,7 +555,8 @@ async function browserProbes(browser) {
     await new Promise((resolve) => setTimeout(resolve, 1200));
   }
 
-  await clickByText(ownerPage, "Enregistrer la création");
+  // Le bouton affiche « Enregistrer » : c'est son titre qui porte le libellé complet.
+  await ownerPage.click('button[title="Enregistrer la création"]');
   await new Promise((resolve) => setTimeout(resolve, 4000));
 
   const designRows = await sql(
@@ -619,62 +648,60 @@ async function browserProbes(browser) {
   }
   await owner.context.close();
 
-  // B6 — commande à la livraison : l'admin peut-il l'encaisser ?
-  await page.goto(`${BASE}/produits/tirage-standard`, { waitUntil: "networkidle2" });
+  // B6 — paiement à la livraison et virement : retirés du tunnel sur demande,
+  //       seule la validation Mobile Money manuelle doit subsister.
+  await page.goto(`${BASE}/produits/${PROBE_PRODUCT_SLUG}`, { waitUntil: "networkidle2" });
   await clickByText(page, "Ajouter au panier");
   await new Promise((resolve) => setTimeout(resolve, 2500));
   await page.goto(`${BASE}/commande`, { waitUntil: "networkidle2" });
-  await fillCheckout(page, { method: "CASH_ON_DELIVERY" });
-  const codReference = await submitOrder(page);
-
-  const admin = await signedInPage(browser, "admin@myphoto.mg", "Admin1234!");
-  const codRow = await sql('select id, "paymentStatus", status from "Order" where reference = $1', [
-    codReference,
-  ]);
-  await admin.page.goto(`${BASE}/admin/commandes/${codRow[0].id}`, { waitUntil: "networkidle2" });
-  const codBody = await admin.page.evaluate(() => document.body.innerText);
-  const canMarkPaid = /paiement reçu/i.test(codBody);
+  const offeredMethods = await page.$$eval('input[name="paymentMethod"]', (nodes) =>
+    nodes.map((node) => node.value),
+  );
+  const onlyMobileMoney =
+    offeredMethods.length > 0 &&
+    !offeredMethods.includes("CASH_ON_DELIVERY") &&
+    !offeredMethods.includes("BANK_TRANSFER");
   record(
     "B6",
-    "Commande payée à la livraison : possibilité de l'encaisser dans le back-office",
-    canMarkPaid ? "OK" : "BUG",
-    canMarkPaid ? "contrôle présent" : "aucun contrôle pour passer une commande COD en « Payée »",
+    "Paiement à la livraison et virement absents du tunnel",
+    onlyMobileMoney ? "OK" : "BUG",
+    `méthodes proposées : ${offeredMethods.join(", ") || "aucune"}`,
   );
 
-  if (!canMarkPaid) {
-    record(
-      "B7",
-      "Encaissement COD enregistré et compté dans le chiffre d'affaires",
-      "BUG",
-      "non testable : le contrôle de B6 est absent",
-    );
-  } else {
-    await admin.page.click('button[value="approve"]');
-    await new Promise((resolve) => setTimeout(resolve, 4500));
+  // B7 — validation manuelle d'un paiement Mobile Money, comptée en CA.
+  await fillCheckout(page, { method: "MVOLA", reference: PROBE_TRANSACTION_REF });
+  const mvolaReference = await submitOrder(page);
 
-    const after = await sql(
-      'select "paymentStatus", status, "paidAt" from "Order" where reference = $1',
-      [codReference],
-    );
-    const revenue = await sql(
-      `select coalesce(sum("totalMga"),0)::int as paid from "Order" where "paymentStatus" = 'PAID' and reference = $1`,
-      [codReference],
-    );
-    const collected =
-      after[0].paymentStatus === "PAID" &&
-      after[0].paidAt !== null &&
-      after[0].status === "CONFIRMED" &&
-      revenue[0].paid > 0;
+  const admin = await signedInPage(browser, "admin@myphoto.mg", "Admin1234!");
+  const mvolaRow = await sql('select id from "Order" where reference = $1', [mvolaReference]);
+  await admin.page.goto(`${BASE}/admin/commandes/${mvolaRow[0].id}`, {
+    waitUntil: "networkidle2",
+  });
+  await admin.page.click('button[value="approve"]');
+  await new Promise((resolve) => setTimeout(resolve, 4500));
 
-    record(
-      "B7",
-      "Encaissement COD enregistré et compté dans le chiffre d'affaires",
-      collected ? "OK" : "BUG",
-      `paiement=${after[0].paymentStatus} · statut=${after[0].status} · payé le=${
-        after[0].paidAt ? "renseigné" : "vide"
-      } · CA compté=${revenue[0].paid} Ar`,
-    );
-  }
+  const approval = await sql(
+    'select "paymentStatus", status, "paidAt" from "Order" where reference = $1',
+    [mvolaReference],
+  );
+  const revenue = await sql(
+    `select coalesce(sum("totalMga"),0)::int as paid from "Order" where "paymentStatus" = 'PAID' and reference = $1`,
+    [mvolaReference],
+  );
+  const collected =
+    approval[0].paymentStatus === "PAID" &&
+    approval[0].paidAt !== null &&
+    approval[0].status === "CONFIRMED" &&
+    revenue[0].paid > 0;
+
+  record(
+    "B7",
+    "Paiement Mobile Money validé manuellement et compté dans le chiffre d'affaires",
+    collected ? "OK" : "BUG",
+    `paiement=${approval[0].paymentStatus} · statut=${approval[0].status} · payé le=${
+      approval[0].paidAt ? "renseigné" : "vide"
+    } · CA compté=${revenue[0].paid} Ar`,
+  );
   await admin.context.close();
 
   // B8 — retrait en boutique : frais de port nuls
@@ -682,7 +709,7 @@ async function browserProbes(browser) {
   await clickByText(page, "Ajouter au panier");
   await new Promise((resolve) => setTimeout(resolve, 2500));
   await page.goto(`${BASE}/commande`, { waitUntil: "networkidle2" });
-  await fillCheckout(page, { method: "CASH_ON_DELIVERY", delivery: "PICKUP" });
+  await fillCheckout(page, { method: "MVOLA", delivery: "PICKUP", reference: PROBE_TRANSACTION_REF });
   const pickupReference = await submitOrder(page);
   const pickupRow = await sql(
     'select "deliveryFeeMga", "deliveryMode", "subtotalMga", "totalMga", "addressLine" from "Order" where reference = $1',
@@ -764,7 +791,7 @@ async function browserProbes(browser) {
   await clickByText(alicePage, "Ajouter au panier");
   await new Promise((resolve) => setTimeout(resolve, 2500));
   await alicePage.goto(`${BASE}/commande`, { waitUntil: "networkidle2" });
-  await fillCheckout(alicePage, { method: "CASH_ON_DELIVERY" });
+  await fillCheckout(alicePage, { method: "MVOLA", reference: PROBE_TRANSACTION_REF });
   const aliceReference = await submitOrder(alicePage);
   await aliceContext.close();
 
@@ -862,7 +889,7 @@ async function browserProbes(browser) {
   await clickByText(page, "Ajouter au panier");
   await new Promise((resolve) => setTimeout(resolve, 2500));
   await page.goto(`${BASE}/commande`, { waitUntil: "networkidle2" });
-  await fillCheckout(page, { method: "CASH_ON_DELIVERY" });
+  await fillCheckout(page, { method: "MVOLA", reference: PROBE_TRANSACTION_REF });
   const doubleEmailValue = await page.$eval("#customerEmail", (input) => input.value);
   const beforeDouble = await sql('select count(*)::int as n from "Order" where "customerEmail" = $1', [
     doubleEmailValue,
@@ -893,7 +920,7 @@ async function browserProbes(browser) {
   await claimPage.goto(`${BASE}/commande`, { waitUntil: "networkidle2" });
 
   const claimEmail = `claim.${Date.now()}@example.mg`;
-  await fillCheckout(claimPage, { method: "CASH_ON_DELIVERY" });
+  await fillCheckout(claimPage, { method: "MVOLA", reference: PROBE_TRANSACTION_REF });
   await setField(claimPage, "#customerEmail", claimEmail);
   const claimReference = await submitOrder(claimPage);
 
@@ -938,7 +965,7 @@ async function browserProbes(browser) {
     blankErrors.slice(0, 1).join(" | ") || "aucune erreur",
   );
 
-  await clickByText(blankPage, "Enregistrer la création");
+  await blankPage.click('button[title="Enregistrer la création"]');
   await new Promise((resolve) => setTimeout(resolve, 4000));
   const designsAfter = await sql('select count(*)::int as n from "Design"');
   record(

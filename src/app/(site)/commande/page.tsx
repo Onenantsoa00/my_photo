@@ -42,6 +42,13 @@ export default async function CheckoutPage() {
 
       <div className="mt-6">
         <CheckoutForm
+          paymentMotif={
+            cart.items
+              .map((item) => item.designTitle)
+              .filter((title): title is string => Boolean(title))
+              .join(", ")
+              .slice(0, 160) || "Photobook MyPhoto Mada"
+          }
           zones={zones.map((zone) => ({
             id: zone.id,
             name: zone.name,

@@ -66,7 +66,10 @@ export default async function CartPage() {
                         >
                           {name}
                         </Link>
-                        <p className="muted">{item.variantLabel}</p>
+                        <p className="muted">
+                          {item.variantLabel}
+                          {item.pageCount ? ` · ${item.pageCount} pages` : null}
+                        </p>
                         {item.designTitle ? (
                           <p className="mt-1 text-xs font-semibold text-brand-700">
                             🎨 {t("cart.design")} : {item.designTitle}

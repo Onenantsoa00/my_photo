@@ -1,11 +1,28 @@
 "use client";
 
 import Konva from "konva";
-import { useEffect, useRef, useState } from "react";
-import { Ellipse, Group, Image as KonvaImage, Layer, Rect, RegularPolygon, Stage, Star, Text, Transformer } from "react-konva";
+import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  Ellipse,
+  Group,
+  Image as KonvaImage,
+  Layer,
+  Rect,
+  RegularPolygon,
+  Stage,
+  Star,
+  Text,
+  Transformer,
+} from "react-konva";
 
+import {
+  gradientEndpoints,
+  patternTile,
+  type PageBackground,
+} from "@/lib/editor/background";
 import type {
-  EditorDocument,
+  EditorPage,
+  ImageCrop,
   ImageFilters,
   ImageLayer,
   Layer as LayerModel,
@@ -58,13 +75,125 @@ function hasActiveFilters(filters: ImageFilters): boolean {
 }
 
 // ---------------------------------------------------------------------------
+// Découpes
+// ---------------------------------------------------------------------------
+
+function drawCrop(
+  ctx: Konva.Context,
+  width: number,
+  height: number,
+  crop: ImageCrop,
+) {
+  const w = width;
+  const h = height;
+
+  ctx.beginPath();
+
+  if (crop === "circle") {
+    ctx.ellipse(w / 2, h / 2, w / 2, h / 2, 0, 0, Math.PI * 2);
+  } else if (crop === "heart") {
+    ctx.moveTo(w / 2, h * 0.92);
+    ctx.bezierCurveTo(w * 0.08, h * 0.56, w * 0.02, h * 0.12, w * 0.3, h * 0.07);
+    ctx.bezierCurveTo(w * 0.42, h * 0.04, w * 0.5, h * 0.16, w * 0.5, h * 0.24);
+    ctx.bezierCurveTo(w * 0.5, h * 0.16, w * 0.58, h * 0.04, w * 0.7, h * 0.07);
+    ctx.bezierCurveTo(w * 0.98, h * 0.12, w * 0.92, h * 0.56, w * 0.5, h * 0.92);
+  } else if (crop === "diamond") {
+    ctx.moveTo(w / 2, 0);
+    ctx.lineTo(w, h / 2);
+    ctx.lineTo(w / 2, h);
+    ctx.lineTo(0, h / 2);
+  } else if (crop === "star") {
+    const cx = w / 2;
+    const cy = h / 2;
+    const outer = Math.min(w, h) / 2;
+    const inner = outer * 0.45;
+
+    for (let index = 0; index < 10; index += 1) {
+      const radius = index % 2 === 0 ? outer : inner;
+      const angle = (Math.PI / 5) * index - Math.PI / 2;
+      const x = cx + Math.cos(angle) * radius;
+      const y = cy + Math.sin(angle) * radius;
+      if (index === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    }
+  } else {
+    ctx.rect(0, 0, w, h);
+  }
+
+  ctx.closePath();
+}
+
+// ---------------------------------------------------------------------------
+// Fond de page
+// ---------------------------------------------------------------------------
+
+/**
+ * Le fond part à l'impression : il est donc dessiné dans Konva, pas derrière
+ * le canevas. Uni, dégradé ou motif répété selon le choix du client.
+ */
+function BackgroundNode({
+  background,
+  width,
+  height,
+}: {
+  background: PageBackground;
+  width: number;
+  height: number;
+}) {
+  const tile = useMemo(
+    () => (background.kind === "pattern" ? patternTile(background) : null),
+    [background],
+  );
+
+  if (background.kind === "gradient") {
+    const points = gradientEndpoints(background, width, height);
+
+    return (
+      <Rect
+        x={0}
+        y={0}
+        width={width}
+        height={height}
+        fillLinearGradientStartPoint={{ x: points.x1, y: points.y1 }}
+        fillLinearGradientEndPoint={{ x: points.x2, y: points.y2 }}
+        fillLinearGradientColorStops={[0, background.from, 1, background.to]}
+      />
+    );
+  }
+
+  if (background.kind === "pattern") {
+    return (
+      <>
+        <Rect x={0} y={0} width={width} height={height} fill={background.surface} />
+        {tile ? (
+          <Rect
+            x={0}
+            y={0}
+            width={width}
+            height={height}
+            // Konva accepte un canevas pour un motif répété, les types de
+            // react-konva ne déclarent que HTMLImageElement.
+            fillPatternImage={tile as unknown as HTMLImageElement}
+            fillPatternRepeat="repeat"
+            fillPatternOffset={{ x: 0, y: 0 }}
+          />
+        ) : null}
+      </>
+    );
+  }
+
+  return <Rect x={0} y={0} width={width} height={height} fill={background.color} />;
+}
+
+// ---------------------------------------------------------------------------
 // Types d'événements
 // ---------------------------------------------------------------------------
 
 export type LayerPatch = Partial<LayerModel>;
 
 export type CanvasStageProps = {
-  document: EditorDocument;
+  page: EditorPage;
+  canvas: { width: number; height: number };
   selectedId: string | null;
   zoom: number;
   stageRef: React.RefObject<Konva.Stage | null>;
@@ -73,6 +202,8 @@ export type CanvasStageProps = {
   onGestureEnd: () => void;
   /** Modification live, sans historique. */
   onChange: (id: string, patch: LayerPatch) => void;
+  /** Emplacement photo vide : ouvrir le sélecteur de fichier. */
+  onRequestPhoto: (id: string) => void;
 };
 
 const IMAGE_FILTER_LIST = [
@@ -84,6 +215,26 @@ const IMAGE_FILTER_LIST = [
   Konva.Filters.Sepia,
 ];
 
+function transformPatch(
+  layer: ImageLayer | ShapeLayer,
+  node: Konva.Node,
+  minimum = 10,
+): LayerPatch {
+  const scaleX = node.scaleX();
+  const scaleY = node.scaleY();
+
+  node.scaleX(1);
+  node.scaleY(1);
+
+  return {
+    x: node.x(),
+    y: node.y(),
+    rotation: node.rotation(),
+    width: Math.max(minimum, layer.width * scaleX),
+    height: Math.max(minimum, layer.height * scaleY),
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Rendu des calques
 // ---------------------------------------------------------------------------
@@ -94,16 +245,19 @@ function ImageNode({
   onGestureStart,
   onGestureEnd,
   onSelect,
+  onRequestPhoto,
 }: {
   layer: ImageLayer;
   onChange: CanvasStageProps["onChange"];
   onGestureStart: () => void;
   onGestureEnd: () => void;
   onSelect: (id: string | null) => void;
+  onRequestPhoto: (id: string) => void;
 }) {
   const image = useHtmlImage(layer.src);
   const nodeRef = useRef<Konva.Image | null>(null);
   const filters = layer.filters;
+  const masked = layer.crop !== "none" && layer.crop !== "rounded";
 
   // Konva applique les filtres sur un cache hors écran : il faut le
   // reconstruire à chaque changement de réglage.
@@ -138,7 +292,18 @@ function ImageNode({
     visible: layer.visible,
     draggable: !layer.locked,
     onMouseDown: () => onSelect(layer.id),
-    onTap: () => onSelect(layer.id),
+    // Un emplacement vide est une invitation : un clic ou un tap ouvre la
+    // galerie / le sélecteur de fichier du téléphone.
+    onTap: image
+      ? () => onSelect(layer.id)
+      : () => {
+          if (!layer.locked) onRequestPhoto(layer.id);
+        },
+    onClick: image
+      ? undefined
+      : () => {
+          if (!layer.locked) onRequestPhoto(layer.id);
+        },
     onDragStart: onGestureStart,
     onDragEnd: (event: Konva.KonvaEventObject<DragEvent>) => {
       onChange(layer.id, { x: event.target.x(), y: event.target.y() });
@@ -146,26 +311,35 @@ function ImageNode({
     },
     onTransformStart: onGestureStart,
     onTransformEnd: (event: Konva.KonvaEventObject<Event>) => {
-      const node = event.target;
-      const scaleX = node.scaleX();
-      const scaleY = node.scaleY();
-
-      node.scaleX(1);
-      node.scaleY(1);
-
-      onChange(layer.id, {
-        x: node.x(),
-        y: node.y(),
-        rotation: node.rotation(),
-        width: Math.max(10, layer.width * scaleX),
-        height: Math.max(10, layer.height * scaleY),
-      });
+      onChange(layer.id, transformPatch(layer, event.target));
       onGestureEnd();
     },
   };
 
   if (!image) {
     // Emplacement vide : cadre pointillé cliquable pour envoyer une photo.
+    if (masked) {
+      return (
+        <Group
+          {...shared}
+          clipFunc={(ctx: Konva.Context) =>
+            drawCrop(ctx, layer.width, layer.height, layer.crop)
+          }
+        >
+          <Rect width={layer.width} height={layer.height} fill="#f1f5f9" />
+          <Text
+            width={layer.width}
+            height={layer.height}
+            align="center"
+            verticalAlign="middle"
+            text="＋"
+            fontSize={Math.min(layer.width, layer.height) * 0.3}
+            fill="#94a3b8"
+          />
+        </Group>
+      );
+    }
+
     return (
       <Group {...shared}>
         <Rect
@@ -190,14 +364,13 @@ function ImageNode({
     );
   }
 
-  return (
+  const imageNode = (
     <KonvaImage
-      {...shared}
       ref={nodeRef}
       image={image}
       width={layer.width}
       height={layer.height}
-      cornerRadius={layer.cornerRadius}
+      cornerRadius={masked ? 0 : layer.cornerRadius}
       filters={IMAGE_FILTER_LIST}
       brightness={filters.brightness}
       contrast={filters.contrast}
@@ -207,6 +380,21 @@ function ImageNode({
       sepia={filters.sepia ? "sepia" : undefined}
     />
   );
+
+  if (masked) {
+    return (
+      <Group
+        {...shared}
+        clipFunc={(ctx: Konva.Context) =>
+          drawCrop(ctx, layer.width, layer.height, layer.crop)
+        }
+      >
+        {imageNode}
+      </Group>
+    );
+  }
+
+  return <KonvaImage {...shared} ref={nodeRef} image={image} width={layer.width} height={layer.height} cornerRadius={layer.cornerRadius} filters={IMAGE_FILTER_LIST} brightness={filters.brightness} contrast={filters.contrast} saturation={filters.saturation} blurRadius={filters.blur} grayscale={filters.grayscale ? "grayscale" : undefined} sepia={filters.sepia ? "sepia" : undefined} />;
 }
 
 function ShapeNode({
@@ -242,20 +430,7 @@ function ShapeNode({
     },
     onTransformStart: onGestureStart,
     onTransformEnd: (event: Konva.KonvaEventObject<Event>) => {
-      const node = event.target;
-      const scaleX = node.scaleX();
-      const scaleY = node.scaleY();
-
-      node.scaleX(1);
-      node.scaleY(1);
-
-      onChange(layer.id, {
-        x: node.x(),
-        y: node.y(),
-        rotation: node.rotation(),
-        width: Math.max(8, layer.width * scaleX),
-        height: Math.max(8, layer.height * scaleY),
-      });
+      onChange(layer.id, transformPatch(layer, event.target, 8));
       onGestureEnd();
     },
   };
@@ -292,7 +467,6 @@ function ShapeNode({
           fill={fill}
           stroke={stroke}
           strokeWidth={strokeWidth}
-          cornerRadius={cornerRadius}
         />
       ) : null}
 
@@ -392,7 +566,8 @@ function TextNode({
 // ---------------------------------------------------------------------------
 
 export default function CanvasStage({
-  document,
+  page,
+  canvas,
   selectedId,
   zoom,
   stageRef,
@@ -400,9 +575,10 @@ export default function CanvasStage({
   onGestureStart,
   onGestureEnd,
   onChange,
+  onRequestPhoto,
 }: CanvasStageProps) {
   const transformerRef = useRef<Konva.Transformer | null>(null);
-  const { width, height, background } = document.canvas;
+  const { width, height } = canvas;
 
   useEffect(() => {
     const transformer = transformerRef.current;
@@ -415,7 +591,7 @@ export default function CanvasStage({
     }
 
     const node = stage.findOne(`#${selectedId}`);
-    const model = document.layers.find((layer) => layer.id === selectedId);
+    const model = page.layers.find((layer) => layer.id === selectedId);
 
     if (!node || (model && (model.locked || !model.visible))) {
       transformer.nodes([]);
@@ -424,7 +600,7 @@ export default function CanvasStage({
 
     transformer.nodes([node]);
     transformer.getLayer()?.batchDraw();
-  }, [selectedId, document.layers, stageRef, zoom]);
+  }, [selectedId, page.layers, stageRef, zoom]);
 
   return (
     <Stage
@@ -443,11 +619,11 @@ export default function CanvasStage({
       className="bg-white shadow-xl ring-1 ring-sand-300"
     >
       <Layer listening={false}>
-        <Rect x={0} y={0} width={width} height={height} fill={background} />
+        <BackgroundNode background={page.background} width={width} height={height} />
       </Layer>
 
       <Layer>
-        {document.layers.map((layer) => {
+        {page.layers.map((layer) => {
           if (!layer.visible) return null;
 
           if (layer.type === "text") {
@@ -472,6 +648,7 @@ export default function CanvasStage({
                 onGestureStart={onGestureStart}
                 onGestureEnd={onGestureEnd}
                 onSelect={onSelect}
+                onRequestPhoto={onRequestPhoto}
               />
             );
           }

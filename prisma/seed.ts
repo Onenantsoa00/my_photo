@@ -1,10 +1,11 @@
 import bcrypt from "bcryptjs";
-
 import { PrismaPg } from "@prisma/adapter-pg";
 
 import { PrismaClient } from "../src/generated/prisma/client";
 import {
-  PHOTOBOOK_PAGES,
+  PHOTOBOOK_BASE_PRICE_MGA,
+  PHOTOBOOK_EXTRA_PAGE_MGA,
+  PHOTOBOOK_MIN_PAGES,
   PHOTOBOOK_SLUG,
   photobookVariantSeeds,
 } from "../src/lib/photobook";
@@ -17,315 +18,34 @@ if (!connectionString) {
 
 const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString }) });
 
+const PHOTOBOOK_CATEGORY_SLUG = "photobooks";
+
 // ---------------------------------------------------------------------------
-// Catalogue
+// Catalogue : un seul produit, le photobook (A4, A5, A6, carré)
 // ---------------------------------------------------------------------------
 
-type VariantSeed = {
-  label: string;
-  priceMga: number;
-  widthMm?: number;
-  heightMm?: number;
-  isDefault?: boolean;
-  /**
-   * Référence explicite. Les formats de photobook en ont besoin : elle est
-   * calculée par `src/lib/photobook.ts` et retrouvée par l'assistant `/creer`.
-   * Sans elle, le SKU reste dérivé du rang du format.
-   */
-  sku?: string;
-  sortOrder?: number;
-};
+const PHOTOBOOK_VARIANTS = photobookVariantSeeds();
 
-type ProductSeed = {
-  slug: string;
-  nameFr: string;
-  nameMg: string;
-  descriptionFr: string;
-  descriptionMg: string;
-  basePriceMga: number;
-  leadTimeDays: number;
-  isFeatured?: boolean;
-  variants: VariantSeed[];
-};
-
-type CategorySeed = {
-  slug: string;
-  nameFr: string;
-  nameMg: string;
-  descriptionFr: string;
-  descriptionMg: string;
-  products: ProductSeed[];
-};
-
-const CATALOG: CategorySeed[] = [
+const CATALOG = [
   {
-    slug: "tirages",
-    nameFr: "Tirages photo",
-    nameMg: "Sary pirinty",
+    slug: PHOTOBOOK_CATEGORY_SLUG,
+    nameFr: "Photobooks",
+    nameMg: "Photobooks",
     descriptionFr:
-      "Vos photos sur papier photo brillant ou satiné, découpées au format exact.",
+      "Des livres photo reliés, imprimés page par page à 300 dpi, en A4, A5, A6 ou carré. 20 pages minimum, puis autant de pages que vous voulez.",
     descriptionMg:
-      "Ny sarinao amin'ny taratasy mazava na satiné, voatapaka amin'ny habe marina.",
+      "Boky sary voafatotra, pirinty isaky ny pejy amin'ny 300 dpi, amin'ny habe A4, A5, A6 na kare. Pejy 20 farafahakeliny, avy eo araka izay tianao.",
     products: [
-      {
-        slug: "tirage-standard",
-        nameFr: "Tirage photo standard",
-        nameMg: "Sary pirinty mahazatra",
-        descriptionFr:
-          "Papier photo 200 g/m² brillant. Idéal pour les albums et les cadres.",
-        descriptionMg:
-          "Taratasy sary 200 g/m² mazava. Tsara ho an'ny rakitsary sy ny fefy.",
-        basePriceMga: 800,
-        leadTimeDays: 1,
-        isFeatured: true,
-        variants: [
-          { label: "10 × 15 cm", widthMm: 100, heightMm: 150, priceMga: 800, isDefault: true },
-          { label: "13 × 18 cm", widthMm: 130, heightMm: 180, priceMga: 1500 },
-          { label: "15 × 21 cm", widthMm: 150, heightMm: 210, priceMga: 2500 },
-          { label: "20 × 30 cm", widthMm: 200, heightMm: 300, priceMga: 5000 },
-          { label: "30 × 45 cm", widthMm: 300, heightMm: 450, priceMga: 12000 },
-        ],
-      },
-      {
-        slug: "tirage-satine-premium",
-        nameFr: "Tirage premium satiné",
-        nameMg: "Sary pirinty satiné ambony",
-        descriptionFr:
-          "Papier fine art 260 g/m² satiné, encres pigmentaires. Rendus de peau naturels.",
-        descriptionMg:
-          "Taratasy fine art 260 g/m² satiné, ranomainty pigmentaire. Voajanahary ny lokon'ny hoditra.",
-        basePriceMga: 12000,
-        leadTimeDays: 2,
-        isFeatured: true,
-        variants: [
-          { label: "A5", widthMm: 148, heightMm: 210, priceMga: 6000, isDefault: true },
-          { label: "A4", widthMm: 210, heightMm: 297, priceMga: 12000 },
-          { label: "A3", widthMm: 297, heightMm: 420, priceMga: 26000 },
-        ],
-      },
-    ],
-  },
-  {
-    slug: "cadres",
-    nameFr: "Cadres & tableaux",
-    nameMg: "Fefy sy tabilao",
-    descriptionFr: "Tirages encadrés, prêts à accrocher au mur.",
-    descriptionMg: "Sary misy fefy, vonona hapetaka amin'ny rindrina.",
-    products: [
-      {
-        slug: "cadre-bois",
-        nameFr: "Cadre photo en bois",
-        nameMg: "Fefy hazo",
-        descriptionFr:
-          "Cadre en bois clair avec passe-partout blanc, verre de protection inclus.",
-        descriptionMg:
-          "Fefy hazo mazava misy passe-partout fotsy, misy fitaratra miaro.",
-        basePriceMga: 45000,
-        leadTimeDays: 3,
-        variants: [
-          { label: "13 × 18 cm", widthMm: 130, heightMm: 180, priceMga: 45000, isDefault: true },
-          { label: "A4", widthMm: 210, heightMm: 297, priceMga: 68000 },
-          { label: "20 × 30 cm", widthMm: 200, heightMm: 300, priceMga: 82000 },
-          { label: "30 × 40 cm", widthMm: 300, heightMm: 400, priceMga: 130000 },
-        ],
-      },
-      {
-        slug: "tableau-toile",
-        nameFr: "Tableau sur toile",
-        nameMg: "Tabilao lamba",
-        descriptionFr:
-          "Impression sur toile tendue sur châssis bois, sans verre. Effet galerie.",
-        descriptionMg:
-          "Sary pirinty amin'ny lamba voatanty amin'ny chassis hazo, tsy misy fitaratra.",
-        basePriceMga: 98000,
-        leadTimeDays: 4,
-        variants: [
-          { label: "30 × 40 cm", widthMm: 300, heightMm: 400, priceMga: 98000, isDefault: true },
-          { label: "40 × 60 cm", widthMm: 400, heightMm: 600, priceMga: 165000 },
-          { label: "50 × 70 cm", widthMm: 500, heightMm: 700, priceMga: 245000 },
-        ],
-      },
-    ],
-  },
-  {
-    slug: "albums",
-    nameFr: "Albums photo",
-    nameMg: "Rakitsary",
-    descriptionFr: "Albums reliés, feuilles épaisses et couverture personnalisée.",
-    descriptionMg: "Rakitsary voafatotra, ravina matevina sy fonony voasoratra anarana.",
-    products: [
-      {
-        slug: "album-photo",
-        nameFr: "Album photo relié",
-        nameMg: "Rakitsary voafatotra",
-        descriptionFr:
-          "Couverture rigide imprimée, 20 pages épaisses 300 g/m², reliure cousue.",
-        descriptionMg:
-          "Fonony mafy pirinty, 20 pejy matevina 300 g/m², voaisy fanjaitra.",
-        basePriceMga: 120000,
-        leadTimeDays: 5,
-        variants: [
-          { label: "20 × 20 cm — 20 pages", widthMm: 200, heightMm: 200, priceMga: 120000, isDefault: true },
-          { label: "28 × 28 cm — 20 pages", widthMm: 280, heightMm: 280, priceMga: 185000 },
-          { label: "30 × 30 cm — 30 pages", widthMm: 300, heightMm: 300, priceMga: 235000 },
-        ],
-      },
       {
         slug: PHOTOBOOK_SLUG,
-        nameFr: "Photobook A4 / A3",
-        nameMg: "Photobook A4 / A3",
-        descriptionFr: `Album relié imprimé page par page : ${PHOTOBOOK_PAGES} pages, couverture solide ou moyen solide, en A5, A4, A3 ou carré, portrait ou paysage.`,
-        descriptionMg: `Rakitsary voafatotra pirinty isaky ny pejy : ${PHOTOBOOK_PAGES} pejy, fonony mafy na semi-rigide, A5, A4, A3 na efajoro, mitsangana na mandry.`,
-        basePriceMga: 75_000,
+        nameFr: "Photobook",
+        nameMg: "Photobook",
+        descriptionFr: `Livre photo relié au format de votre choix : A4, A5, A6 ou carré 20 × 20 cm, portrait ou paysage. ${PHOTOBOOK_MIN_PAGES} pages incluses pour 15 000 Ar, puis 1 000 Ar par page supplémentaire. Couverture solide (+ 5 000 Ar) ou moyen solide.`,
+        descriptionMg: `Boky sary voafatotra amin'ny habe safidinao : A4, A5, A6 na kare 20 × 20 sm, mitsangana na mandry. Pejy ${PHOTOBOOK_MIN_PAGES} tafiditra amin'ny 15 000 Ar, avy eo 1 000 Ar isaky ny pejy fanampiny. Fonony mafy (+ 5 000 Ar) na semi-rigide.`,
+        basePriceMga: PHOTOBOOK_BASE_PRICE_MGA,
         leadTimeDays: 5,
         isFeatured: true,
-        // 20 combinaisons papier × orientation × couverture, générées depuis la
-        // même source que l'assistant de création (src/lib/photobook.ts).
-        variants: photobookVariantSeeds(),
-      },
-      {
-        slug: "album-mariage",
-        nameFr: "Album de mariage",
-        nameMg: "Rakitsary fampakaram-bady",
-        descriptionFr:
-          "Album premium, papier satiné 400 g/m², 40 pages. Livré en boîte cadeau.",
-        descriptionMg:
-          "Rakitsary ambony, taratasy satiné 400 g/m², 40 pejy. Misy boaty fanomezana.",
-        basePriceMga: 380000,
-        leadTimeDays: 7,
-        variants: [
-          { label: "30 × 30 cm — 40 pages", widthMm: 300, heightMm: 300, priceMga: 380000, isDefault: true },
-          { label: "35 × 35 cm — 40 pages", widthMm: 350, heightMm: 350, priceMga: 520000 },
-        ],
-      },
-    ],
-  },
-  {
-    slug: "objets",
-    nameFr: "Objets personnalisés",
-    nameMg: "Zavatra voasoratra anarana",
-    descriptionFr: "Mugs, t-shirts, puzzles et coussins imprimés à votre image.",
-    descriptionMg: "Kapoaka, t-shirt, puzzle sy ondana voasary pirinty.",
-    products: [
-      {
-        slug: "mug-personnalise",
-        nameFr: "Mug personnalisé",
-        nameMg: "Kapoaka voasoratra anarana",
-        descriptionFr: "Mug céramique 325 ml, impression sublimation lavable au lave-vaisselle.",
-        descriptionMg: "Kapoaka céramique 325 ml, pirinty sublimation azo sasana.",
-        basePriceMga: 35000,
-        leadTimeDays: 2,
-        isFeatured: true,
-        variants: [
-          { label: "Mug 325 ml blanc", priceMga: 35000, isDefault: true },
-          { label: "Mug magique (révélable)", priceMga: 48000 },
-          { label: "Mug intérieur coloré", priceMga: 42000 },
-        ],
-      },
-      {
-        slug: "t-shirt-personnalise",
-        nameFr: "T-shirt personnalisé",
-        nameMg: "T-shirt voasoratra anarana",
-        descriptionFr: "Coton 180 g/m², impression numérique durable, tailles S à XXL.",
-        descriptionMg: "Coton 180 g/m², pirinty maharitra, habe S ka hatramin'ny XXL.",
-        basePriceMga: 55000,
-        leadTimeDays: 3,
-        variants: [
-          { label: "Taille S", priceMga: 55000, isDefault: true },
-          { label: "Taille M", priceMga: 55000 },
-          { label: "Taille L", priceMga: 58000 },
-          { label: "Taille XL", priceMga: 62000 },
-          { label: "Taille XXL", priceMga: 68000 },
-        ],
-      },
-      {
-        slug: "puzzle-photo",
-        nameFr: "Puzzle photo",
-        nameMg: "Puzzle sary",
-        descriptionFr: "Puzzle 300 pièces dans une boîte cadeau, à partir de votre photo.",
-        descriptionMg: "Puzzle 300 pièces anaty boaty fanomezana, avy amin'ny sarinao.",
-        basePriceMga: 65000,
-        leadTimeDays: 4,
-        variants: [
-          { label: "300 pièces — A4", widthMm: 210, heightMm: 297, priceMga: 65000, isDefault: true },
-          { label: "500 pièces — A3", widthMm: 297, heightMm: 420, priceMga: 95000 },
-        ],
-      },
-      {
-        slug: "coussin-photo",
-        nameFr: "Coussin photo",
-        nameMg: "Ondana sary",
-        descriptionFr: "Housse polyester 40 × 40 cm avec garnissage inclus.",
-        descriptionMg: "Sarony polyester 40 × 40 cm misy famenoana.",
-        basePriceMga: 70000,
-        leadTimeDays: 4,
-        variants: [
-          { label: "40 × 40 cm", widthMm: 400, heightMm: 400, priceMga: 70000, isDefault: true },
-          { label: "50 × 50 cm", widthMm: 500, heightMm: 500, priceMga: 95000 },
-        ],
-      },
-    ],
-  },
-  {
-    slug: "cartes",
-    nameFr: "Cartes & faire-part",
-    nameMg: "Karatra sy fanasana",
-    descriptionFr: "Cartes postales, vœux et faire-part de mariage ou de naissance.",
-    descriptionMg: "Karatra, fiarahabana sy fanasana fampakaram-bady na fahaterahana.",
-    products: [
-      {
-        slug: "carte-postale",
-        nameFr: "Carte postale",
-        nameMg: "Karatra",
-        descriptionFr: "Carte 350 g/m² avec dos vierge pour écrire. Vendue à l'unité.",
-        descriptionMg: "Karatra 350 g/m² misy lamosina foana hanoratana. Isam-batan'olona.",
-        basePriceMga: 1500,
-        leadTimeDays: 2,
-        variants: [
-          { label: "A6 — 10 × 15 cm", widthMm: 100, heightMm: 150, priceMga: 1500, isDefault: true },
-          { label: "A5 — 15 × 21 cm", widthMm: 150, heightMm: 210, priceMga: 3000 },
-        ],
-      },
-      {
-        slug: "faire-part-mariage",
-        nameFr: "Faire-part de mariage",
-        nameMg: "Fanasana fampakaram-bady",
-        descriptionFr:
-          "Faire-part double volet avec enveloppe. Tarif dégressif à partir de 50 pièces.",
-        descriptionMg:
-          "Fanasana roa sosona misy valopy. Mihena ny vidiny manomboka amin'ny 50.",
-        basePriceMga: 2500,
-        leadTimeDays: 5,
-        variants: [
-          { label: "10 × 21 cm — à l'unité", widthMm: 100, heightMm: 210, priceMga: 2500, isDefault: true },
-          { label: "10 × 21 cm — lot de 50", widthMm: 100, heightMm: 210, priceMga: 95000 },
-          { label: "10 × 21 cm — lot de 100", widthMm: 100, heightMm: 210, priceMga: 165000 },
-        ],
-      },
-    ],
-  },
-  {
-    slug: "affiches",
-    nameFr: "Affiches & posters",
-    nameMg: "Afisy sy poster",
-    descriptionFr: "Grands formats pour la décoration intérieure et les événements.",
-    descriptionMg: "Habe lehibe ho haingo trano sy hetsika.",
-    products: [
-      {
-        slug: "poster-mural",
-        nameFr: "Poster mural",
-        nameMg: "Poster rindrina",
-        descriptionFr: "Papier mat 200 g/m², sans cadre. Idéal pour habiller un mur.",
-        descriptionMg: "Taratasy mat 200 g/m², tsy misy fefy. Tsara ho haingo rindrina.",
-        basePriceMga: 18000,
-        leadTimeDays: 2,
-        isFeatured: true,
-        variants: [
-          { label: "A3", widthMm: 297, heightMm: 420, priceMga: 18000, isDefault: true },
-          { label: "A2", widthMm: 420, heightMm: 594, priceMga: 35000 },
-          { label: "A1", widthMm: 594, heightMm: 841, priceMga: 62000 },
-          { label: "A0", widthMm: 841, heightMm: 1189, priceMga: 110000 },
-        ],
+        variants: PHOTOBOOK_VARIANTS,
       },
     ],
   },
@@ -368,6 +88,7 @@ async function seedCatalog() {
         descriptionFr: category.descriptionFr,
         descriptionMg: category.descriptionMg,
         sortOrder: categoryIndex,
+        isActive: true,
       },
       create: {
         slug: category.slug,
@@ -411,38 +132,57 @@ async function seedCatalog() {
       productCount += 1;
 
       for (const [variantIndex, variant] of product.variants.entries()) {
-        const sku = variant.sku ?? `${product.slug}-${variantIndex + 1}`;
-
         await prisma.productVariant.upsert({
-          where: { sku },
+          where: { sku: variant.sku },
           update: {
             productId: savedProduct.id,
             label: variant.label,
-            widthMm: variant.widthMm ?? null,
-            heightMm: variant.heightMm ?? null,
+            widthMm: variant.widthMm,
+            heightMm: variant.heightMm,
             priceMga: variant.priceMga,
-            isDefault: variant.isDefault ?? false,
+            isDefault: variant.isDefault,
             sortOrder: variant.sortOrder ?? variantIndex,
             isActive: true,
           },
           create: {
             productId: savedProduct.id,
-            sku,
+            sku: variant.sku,
             label: variant.label,
-            widthMm: variant.widthMm ?? null,
-            heightMm: variant.heightMm ?? null,
+            widthMm: variant.widthMm,
+            heightMm: variant.heightMm,
             priceMga: variant.priceMga,
-            isDefault: variant.isDefault ?? false,
+            isDefault: variant.isDefault,
             sortOrder: variant.sortOrder ?? variantIndex,
           },
         });
         variantCount += 1;
       }
+
+      // Les anciens formats ne sont plus vendus : seules les combinaisons
+      // décrites ici (A4, A5, A6, carré × orientation × couverture) restent actives.
+      await prisma.productVariant.updateMany({
+        where: {
+          productId: savedProduct.id,
+          sku: { notIn: product.variants.map((variant) => variant.sku) },
+        },
+        data: { isActive: false },
+      });
     }
   }
 
+  // La boutique ne vend plus que le photobook A4 : tout le reste est retiré
+  // de la vitrine sans supprimer l'historique des commandes déjà passées.
+  await prisma.product.updateMany({
+    where: { slug: { not: PHOTOBOOK_SLUG } },
+    data: { isActive: false },
+  });
+  await prisma.category.updateMany({
+    where: { slug: { not: PHOTOBOOK_CATEGORY_SLUG } },
+    data: { isActive: false },
+  });
+
   console.log(
-    `  catalogue : ${categoryCount} catégories, ${productCount} produits, ${variantCount} formats`,
+    `  catalogue : ${categoryCount} catégorie, ${productCount} produit, ${variantCount} formats`,
   );
 }
 
@@ -512,7 +252,9 @@ async function main() {
   await seedCatalog();
   await seedZones();
   await seedUsers();
-  console.log("Seed terminé.");
+  console.log(
+    `Seed terminé. Tarif : ${PHOTOBOOK_MIN_PAGES} pages = 15 000 Ar, + ${PHOTOBOOK_EXTRA_PAGE_MGA} Ar/page, + couverture solide 5 000 Ar.`,
+  );
 }
 
 main()
