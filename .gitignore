@@ -1,0 +1,31 @@
+# Dépendances
+node_modules/
+.pnp
+.pnp.js
+
+# Next.js
+.next/
+out/
+build/
+next-env.d.ts
+
+# Prisma 7 : le client est généré dans le code source
+src/generated/
+
+# Contenus téléversés par les utilisateurs (ne jamais committer)
+storage/
+!storage/.gitkeep
+
+# Environnement
+.env
+.env.local
+.env*.local
+
+# Artefacts de la vérification de bout en bout (scripts/e2e.mjs)
+.e2e-artifacts/
+
+# Divers
+*.log
+.DS_Store
+.vercel
+*.tsbuildinfo

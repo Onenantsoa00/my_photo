@@ -1,0 +1,158 @@
+@import "tailwindcss";
+
+/*
+ * Palette inspirée du drapeau malgache : vert et rouge, sur des neutres chauds.
+ */
+@theme {
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
+    "Helvetica Neue", Arial, sans-serif;
+
+  --color-brand-50: #eefbf3;
+  --color-brand-100: #d6f5e3;
+  --color-brand-200: #b0e9cb;
+  --color-brand-300: #7dd6ab;
+  --color-brand-400: #45bb86;
+  --color-brand-500: #1f9e69;
+  --color-brand-600: #127f53;
+  --color-brand-700: #0f6544;
+  --color-brand-800: #0f5038;
+  --color-brand-900: #0d4230;
+
+  --color-accent-50: #fef2f2;
+  --color-accent-100: #fee2e2;
+  --color-accent-200: #fecaca;
+  --color-accent-400: #f87171;
+  --color-accent-500: #e2372f;
+  --color-accent-600: #c62b24;
+  --color-accent-700: #a3221c;
+
+  --color-sand-50: #fbf9f6;
+  --color-sand-100: #f5f1ea;
+  --color-sand-200: #e9e2d6;
+  --color-sand-300: #d8cdba;
+
+  --color-ink-500: #64748b;
+  --color-ink-700: #334155;
+  --color-ink-900: #0f172a;
+}
+
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    @apply bg-sand-50 text-ink-900 antialiased;
+  }
+
+  h1,
+  h2,
+  h3 {
+    @apply tracking-tight;
+  }
+
+  :focus-visible {
+    @apply outline-2 outline-offset-2 outline-brand-600;
+  }
+}
+
+@layer components {
+  .container-page {
+    @apply mx-auto w-full max-w-6xl px-4 sm:px-6;
+  }
+
+  /*
+   * Tailwind v4 n'autorise pas `@apply` sur une classe personnalisée :
+   * la base est donc partagée par une liste de sélecteurs.
+   */
+  .btn,
+  .btn-primary,
+  .btn-accent,
+  .btn-outline,
+  .btn-ghost {
+    @apply inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5
+      text-sm font-semibold transition-colors disabled:cursor-not-allowed
+      disabled:opacity-50;
+  }
+
+  .btn-primary {
+    @apply bg-brand-600 text-white hover:bg-brand-700;
+  }
+
+  .btn-accent {
+    @apply bg-accent-500 text-white hover:bg-accent-600;
+  }
+
+  .btn-outline {
+    @apply border border-sand-300 bg-white text-ink-900 hover:bg-sand-100;
+  }
+
+  .btn-ghost {
+    @apply text-ink-700 hover:bg-sand-100;
+  }
+
+  .btn-sm {
+    @apply rounded-lg px-3 py-1.5 text-xs;
+  }
+
+  .card {
+    @apply rounded-2xl border border-sand-200 bg-white shadow-sm;
+  }
+
+  .label {
+    @apply mb-1.5 block text-sm font-medium text-ink-700;
+  }
+
+  .input {
+    @apply w-full rounded-xl border border-sand-300 bg-white px-3 py-2.5 text-sm
+      text-ink-900 placeholder:text-ink-500 focus:border-brand-500
+      focus:outline-none focus:ring-2 focus:ring-brand-100;
+  }
+
+  .badge,
+  .badge-neutral,
+  .badge-brand,
+  .badge-warn,
+  .badge-danger {
+    @apply inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-semibold;
+  }
+
+  .badge-neutral {
+    @apply bg-sand-100 text-ink-700;
+  }
+
+  .badge-brand {
+    @apply bg-brand-100 text-brand-800;
+  }
+
+  .badge-warn {
+    @apply bg-amber-100 text-amber-800;
+  }
+
+  .badge-danger {
+    @apply bg-accent-100 text-accent-700;
+  }
+
+  .section-title {
+    @apply text-2xl font-bold text-ink-900 sm:text-3xl;
+  }
+
+  .muted {
+    @apply text-sm text-ink-500;
+  }
+}
+
+/* Barre de défilement discrète dans les panneaux de l'atelier. */
+.thin-scroll::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.thin-scroll::-webkit-scrollbar-thumb {
+  border-radius: 9999px;
+  background: var(--color-sand-300);
+}
+
+.thin-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
