@@ -26,6 +26,7 @@ export async function listProducts(options: { categorySlug?: string } = {}) {
         where: { isActive: true },
         orderBy: { sortOrder: "asc" },
       },
+      images: { orderBy: { sortOrder: "asc" }, take: 1 },
     },
   });
 }
@@ -41,6 +42,7 @@ export async function listFeaturedProducts(take = 4) {
         where: { isActive: true },
         orderBy: { sortOrder: "asc" },
       },
+      images: { orderBy: { sortOrder: "asc" }, take: 1 },
     },
   });
 }
@@ -54,6 +56,7 @@ export async function getProductBySlug(slug: string) {
         where: { isActive: true },
         orderBy: { sortOrder: "asc" },
       },
+      images: { orderBy: { sortOrder: "asc" } },
     },
   });
 }

@@ -41,6 +41,7 @@ model User {
   orders    Order[]
   carts     Cart[]
   accounts  OAuthAccount[]
+  reviews   Review[]
 
   @@index([role])
 }
@@ -146,9 +147,28 @@ model Product {
   designs  Design[]
   items    CartItem[]
   orderItems OrderItem[]
+  images   ProductImage[]
+  reviews  Review[]
 
   @@index([categoryId, isActive])
   @@index([isFeatured, isActive])
+}
+
+/// Photos de vitrine d'un produit (réalisations, mises en situation).
+/// L'administrateur les ajoute depuis le back-office : elles alimentent la
+/// page d'accueil et la galerie de la fiche produit.
+model ProductImage {
+  id        String   @id @default(cuid())
+  productId String
+  url       String
+  altFr     String?
+  altMg     String?
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@index([productId, sortOrder])
 }
 
 model ProductVariant {
@@ -348,10 +368,37 @@ model Order {
 
   items  OrderItem[]
   events OrderEvent[]
+  review Review?
 
   @@index([userId, createdAt])
   @@index([status, createdAt])
   @@index([paymentStatus])
+}
+
+/// Avis laissé par un client après réception de sa commande.
+///
+/// Facultatif : la commande peut rester sans avis. Une seule note par
+/// commande (`orderId` unique) pour éviter les avis en série.
+model Review {
+  id           String   @id @default(cuid())
+  orderId      String   @unique
+  userId       String?
+  productId    String?
+  /// Nom affiché, figé au moment de l'avis (le client peut changer ensuite).
+  customerName String
+  /// Note de 1 à 5 étoiles.
+  rating       Int
+  comment      String?
+  /// Un avis peut être masqué par l'équipe sans être supprimé.
+  isPublished  Boolean  @default(true)
+  createdAt    DateTime @default(now())
+
+  order   Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  user    User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  product Product? @relation(fields: [productId], references: [id], onDelete: SetNull)
+
+  @@index([productId, isPublished, createdAt])
+  @@index([rating])
 }
 
 model OrderItem {

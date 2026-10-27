@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
+import { ReviewForm } from "@/components/reviews/review-form";
+import { Stars } from "@/components/reviews/stars";
 import { StatusBadge } from "@/components/status-badge";
 import { formatDate, formatDateTime, formatMga } from "@/lib/format";
 import { translate, type TranslationKey } from "@/lib/i18n";
@@ -41,6 +43,7 @@ export default async function OrderPage({ params }: PageProps) {
         },
         deliveryZone: { select: { etaDaysMax: true } },
         events: { orderBy: { createdAt: "asc" } },
+        review: true,
       },
     }),
     getSessionUser(),
@@ -159,6 +162,32 @@ export default async function OrderPage({ params }: PageProps) {
                 })}
               </ul>
             </section>
+
+            {order.status === "DELIVERED" || order.review ? (
+              <section id="avis" className="scroll-mt-24">
+                <h2 className="font-bold">{t("review.summary")}</h2>
+
+                {order.review ? (
+                  <div className="mt-3 rounded-xl border border-sand-200 p-4">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Stars value={order.review.rating} />
+                      <span className="text-xs font-semibold text-ink-700">
+                        {t("review.verified")}
+                      </span>
+                    </div>
+                    {order.review.comment ? (
+                      <p className="mt-2 text-sm leading-relaxed text-ink-700">
+                        {order.review.comment}
+                      </p>
+                    ) : null}
+                  </div>
+                ) : (
+                  <div className="mt-3">
+                    <ReviewForm orderId={order.id} />
+                  </div>
+                )}
+              </section>
+            ) : null}
 
             <section>
               <h2 className="font-bold">{t("order.history")}</h2>

@@ -19,6 +19,16 @@ const ORDER_STATUSES = [
 
 type OrderStatusValue = (typeof ORDER_STATUSES)[number];
 
+/** URL d'image acceptée : fichier servi par l'application ou adresse absolue. */
+function imageUrlOrNull(value: FormDataEntryValue | null): string | null {
+  const url = String(value ?? "").trim();
+
+  if (!url) return null;
+  if (!url.startsWith("/") && !/^https?:\/\//i.test(url)) return null;
+
+  return url.slice(0, 600);
+}
+
 async function assertAdmin(): Promise<string | null> {
   const user = await getSessionUser();
 
@@ -164,6 +174,8 @@ export async function updateProductAction(formData: FormData): Promise<void> {
   const productId = String(formData.get("productId") ?? "");
   const nameFr = String(formData.get("nameFr") ?? "").trim();
   const nameMg = String(formData.get("nameMg") ?? "").trim();
+  const descriptionFr = String(formData.get("descriptionFr") ?? "").trim();
+  const descriptionMg = String(formData.get("descriptionMg") ?? "").trim();
   const basePriceMga = Number(formData.get("basePriceMga") ?? NaN);
   const leadTimeDays = Number(formData.get("leadTimeDays") ?? NaN);
   const isActive = formData.get("isActive") === "on";
@@ -176,6 +188,9 @@ export async function updateProductAction(formData: FormData): Promise<void> {
     data: {
       nameFr,
       nameMg: nameMg || nameFr,
+      ...(descriptionFr ? { descriptionFr } : {}),
+      ...(descriptionMg ? { descriptionMg } : {}),
+      imageUrl: imageUrlOrNull(formData.get("imageUrl")),
       basePriceMga: Math.round(basePriceMga),
       leadTimeDays: Number.isFinite(leadTimeDays) ? Math.max(0, Math.round(leadTimeDays)) : 2,
       isActive,
@@ -184,6 +199,59 @@ export async function updateProductAction(formData: FormData): Promise<void> {
   });
 
   revalidatePath("/admin/produits");
+  revalidatePath("/produits", "layout");
+  revalidatePath("/", "layout");
+}
+
+/** Ajoute une photo à la vitrine (page d'accueil et fiche produit). */
+export async function addProductImageAction(formData: FormData): Promise<void> {
+  const actor = await assertAdmin();
+  if (!actor) return;
+
+  const productId = String(formData.get("productId") ?? "");
+  const url = imageUrlOrNull(formData.get("url"));
+  const altFr = String(formData.get("altFr") ?? "").trim().slice(0, 160);
+  const altMg = String(formData.get("altMg") ?? "").trim().slice(0, 160);
+
+  if (!productId || !url) return;
+
+  const product = await prisma.product.findUnique({
+    where: { id: productId },
+    select: { id: true },
+  });
+  if (!product) return;
+
+  const last = await prisma.productImage.aggregate({
+    where: { productId: product.id },
+    _max: { sortOrder: true },
+  });
+
+  await prisma.productImage.create({
+    data: {
+      productId: product.id,
+      url,
+      altFr: altFr || null,
+      altMg: altMg || altFr || null,
+      sortOrder: (last._max.sortOrder ?? -1) + 1,
+    },
+  });
+
+  revalidatePath("/admin/produits");
+  revalidatePath("/produits", "layout");
+  revalidatePath("/", "layout");
+}
+
+export async function deleteProductImageAction(formData: FormData): Promise<void> {
+  const actor = await assertAdmin();
+  if (!actor) return;
+
+  const imageId = String(formData.get("imageId") ?? "");
+  if (!imageId) return;
+
+  await prisma.productImage.deleteMany({ where: { id: imageId } });
+
+  revalidatePath("/admin/produits");
+  revalidatePath("/produits", "layout");
   revalidatePath("/", "layout");
 }
 
@@ -274,6 +342,7 @@ export async function createProductAction(formData: FormData): Promise<void> {
   const isActive = formData.get("isActive") === "on";
   const isFeatured = formData.get("isFeatured") === "on";
   const variantLabel = String(formData.get("variantLabel") ?? "").trim();
+  const imageUrl = imageUrlOrNull(formData.get("imageUrl"));
 
   if (!nameFr || !Number.isFinite(basePriceMga) || basePriceMga < 0) return;
 
@@ -302,6 +371,7 @@ export async function createProductAction(formData: FormData): Promise<void> {
       nameMg: nameMg || nameFr,
       descriptionFr: descriptionFr || nameFr,
       descriptionMg: nameMg || descriptionFr || nameFr,
+      imageUrl,
       basePriceMga: price,
       leadTimeDays: Number.isFinite(leadTimeDays) ? Math.max(0, Math.round(leadTimeDays)) : 2,
       isActive,

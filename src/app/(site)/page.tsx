@@ -1,6 +1,7 @@
 import {
   ArrowRight,
   BookOpen,
+  Camera,
   Check,
   Heart,
   ImagePlus,
@@ -18,28 +19,133 @@ import Link from "next/link";
 import { TemplatePreview } from "@/components/editor/template-preview";
 import { FadeIn, Reveal } from "@/components/motion/reveal";
 import { PriceTeaser } from "@/components/photobook/price-teaser";
-import { translate } from "@/lib/i18n";
+import { Stars } from "@/components/reviews/stars";
+import {
+  backgroundToCss,
+  type PageBackground,
+} from "@/lib/editor/background";
+import {
+  THEMES,
+  findTemplate,
+  type Template,
+} from "@/lib/editor/templates";
+import type { EditorDocument } from "@/lib/editor/types";
+import { formatDate } from "@/lib/format";
+import { translate, type TranslationKey } from "@/lib/i18n";
 import { getLocale } from "@/lib/locale.server";
-import { PAYMENT_ACCOUNTS, PAYMENT_ACCOUNT_NAME } from "@/lib/payment";
 import {
   PHOTOBOOK_BASE_PRICE_MGA,
   PHOTOBOOK_EXTRA_PAGE_MGA,
   PHOTOBOOK_MIN_PAGES,
+  PHOTOBOOK_SLUG,
 } from "@/lib/photobook";
-import { findTemplate, type Template } from "@/lib/editor/templates";
+import { PAYMENT_ACCOUNTS, PAYMENT_ACCOUNT_NAME } from "@/lib/payment";
+import { prisma } from "@/lib/prisma";
+import { getProductBySlug } from "@/server/catalog";
+
+/** Modèles mis en avant dans la vitrine d'accueil. */
+const SHOWCASE_TEMPLATE_IDS = [
+  "pb-fleurs-couronne",
+  "pb-luxe-monogramme",
+  "pb-dore-cadre",
+  "pb-botanique",
+  "pb-anniversaire-dore",
+  "pb-polaroid",
+];
+
+const GALLERY_TEMPLATE_IDS = [
+  "pb-fleurs-couronne",
+  "pb-luxe-monogramme",
+  "pb-dore-cadre",
+  "pb-botanique",
+  "pb-mosaique",
+  "pb-anniversaire-dore",
+  "pb-polaroid",
+  "pb-editorial-noir",
+];
+
+const HERO_SECONDARY_IDS = ["pb-fleurs-couronne", "pb-dore-cadre"];
+
+type ShowcaseItem = {
+  key: string;
+  title: string;
+  subtitle: string;
+  imageUrl?: string;
+  document?: EditorDocument;
+};
 
 export default async function HomePage() {
   const locale = await getLocale();
-  const t = (key: Parameters<typeof translate>[1]) => translate(locale, key);
+  const t = (key: TranslationKey, replacements?: Record<string, string | number>) =>
+    translate(locale, key, replacements);
 
-  const cover = findTemplate("pb-couverture")?.build();
-  const gallery = ["pb-mariage", "pb-grille-4", "pb-voyage", "pb-bebe"]
-    .map((id) => findTemplate(id))
+  const product = await getProductBySlug(PHOTOBOOK_SLUG);
+  const [reviewAggregate, latestReviews] = await Promise.all([
+    prisma.review.aggregate({
+      where: { isPublished: true },
+      _avg: { rating: true },
+      _count: true,
+    }),
+    prisma.review.findMany({
+      where: { isPublished: true },
+      orderBy: { createdAt: "desc" },
+      take: 3,
+      select: {
+        id: true,
+        customerName: true,
+        rating: true,
+        comment: true,
+        createdAt: true,
+      },
+    }),
+  ]);
+
+  const heroCover = findTemplate("pb-luxe-couverture")?.build();
+  const heroSecondary = HERO_SECONDARY_IDS.map((id) => findTemplate(id)).filter(
+    (template): template is Template => Boolean(template),
+  );
+
+  const gallery = GALLERY_TEMPLATE_IDS.map((id) => findTemplate(id))
+    .filter((template): template is Template => Boolean(template))
+    .map((template) => ({ template, document: template.build() }));
+
+  // Photos de vitrine gérées par l'administrateur, complétées par des modèles
+  // tant qu'il n'y a pas assez de photos : la page d'accueil reste habillée.
+  const adminPhotos = product
+    ? [
+        ...(product.imageUrl
+          ? [{ url: product.imageUrl, alt: product.nameFr }]
+          : []),
+        ...product.images.map((image) => ({
+          url: image.url,
+          alt:
+            (locale === "mg" ? image.altMg : image.altFr) ??
+            image.altFr ??
+            product.nameFr,
+        })),
+      ].slice(0, 6)
+    : [];
+
+  const templateShowcase: ShowcaseItem[] = SHOWCASE_TEMPLATE_IDS.map((id) =>
+    findTemplate(id),
+  )
     .filter((template): template is Template => Boolean(template))
     .map((template) => ({
-      template,
+      key: template.id,
+      title: locale === "mg" ? template.nameMg : template.nameFr,
+      subtitle: t("home.showcaseDemoSub"),
       document: template.build(),
     }));
+
+  const showcaseItems: ShowcaseItem[] = [
+    ...adminPhotos.map((photo, index) => ({
+      key: `photo-${index}`,
+      title: photo.alt,
+      subtitle: t("home.showcasePhotoSub"),
+      imageUrl: photo.url,
+    })),
+    ...templateShowcase,
+  ].slice(0, 6);
 
   const features = [
     { icon: BookOpen, title: t("home.feature1Title"), text: t("home.feature1Text") },
@@ -55,6 +161,22 @@ export default async function HomePage() {
     { title: t("home.howStep2Title"), text: t("home.howStep2Text") },
     { title: t("home.howStep3Title"), text: t("home.howStep3Text") },
   ];
+
+  const motifs: { key: TranslationKey; background: PageBackground }[] = [
+    { key: "editor.pattern.flowers", background: pattern("flowers", "#f2a7bb", "#fff8fa") },
+    { key: "editor.pattern.floral", background: pattern("floral", "#e7a86e", "#fff8ef") },
+    { key: "editor.pattern.monogram", background: pattern("monogram", "#c9a24a", "#0a2b23") },
+    { key: "editor.pattern.gold", background: pattern("gold", "#d4af37", "#121212") },
+    { key: "editor.pattern.deco", background: pattern("deco", "#c9a24a", "#111111") },
+    { key: "editor.pattern.leaves", background: pattern("leaves", "#9aa887", "#f6f4ec") },
+    { key: "editor.pattern.hearts", background: pattern("hearts", "#ef8fa8", "#fff6f8") },
+    { key: "editor.pattern.stars", background: pattern("stars", "#e9d7a7", "#101a33") },
+    { key: "editor.pattern.waves", background: pattern("waves", "#7fb8c9", "#eef8fb") },
+    { key: "editor.pattern.marble", background: pattern("marble", "#cdbba6", "#f7f2e9") },
+  ];
+
+  const averageRating = reviewAggregate._avg.rating ?? 0;
+  const reviewCount = reviewAggregate._count;
 
   return (
     <div>
@@ -81,7 +203,7 @@ export default async function HomePage() {
         <div className="container-page relative grid gap-14 py-14 sm:py-20 lg:grid-cols-[1.02fr_.98fr] lg:items-center lg:py-24">
           <FadeIn>
             <span className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/5 px-3 py-1.5 text-xs font-semibold text-brand-200 backdrop-blur">
-              <Sparkles className="h-3.5 w-3.5" />
+              <Camera className="h-3.5 w-3.5" />
               {t("home.heroBadge")}
             </span>
 
@@ -124,20 +246,24 @@ export default async function HomePage() {
             </ul>
           </FadeIn>
 
-          {/* Aperçu du photobook */}
+          {/* Aperçus de livres imprimés */}
           <FadeIn delay={0.12} className="relative mx-auto w-full max-w-md lg:max-w-none">
-            <div className="relative h-[22rem] sm:h-[27rem]">
-              <div className="absolute left-[6%] top-[8%] w-[58%] rotate-[-7deg] rounded-xl shadow-2xl shadow-black/40 transition-transform duration-500 hover:rotate-[-3deg]">
-                {cover ? <TemplatePreview document={cover} width={260} /> : null}
+            <div className="relative h-[23rem] sm:h-[28rem]">
+              <div className="absolute left-[4%] top-[7%] w-[58%] rotate-[-7deg] rounded-xl shadow-2xl shadow-black/40 transition-transform duration-500 hover:rotate-[-3deg]">
+                {heroCover ? <TemplatePreview document={heroCover} width={270} /> : null}
               </div>
-              <div className="absolute right-[4%] top-[22%] w-[55%] rotate-[6deg] rounded-xl shadow-2xl shadow-black/50 transition-transform duration-500 hover:rotate-[3deg]">
-                {gallery[0] ? <TemplatePreview document={gallery[0].document} width={250} /> : null}
+              <div className="absolute right-[3%] top-[20%] w-[55%] rotate-[6deg] rounded-xl shadow-2xl shadow-black/50 transition-transform duration-500 hover:rotate-[3deg]">
+                {heroSecondary[0] ? (
+                  <TemplatePreview document={heroSecondary[0].build()} width={250} />
+                ) : null}
               </div>
-              <div className="absolute bottom-[2%] left-[22%] w-[52%] rotate-[2deg] rounded-xl shadow-2xl shadow-black/40">
-                {gallery[2] ? <TemplatePreview document={gallery[2].document} width={240} /> : null}
+              <div className="absolute bottom-[1%] left-[20%] w-[52%] rotate-[2deg] rounded-xl shadow-2xl shadow-black/40">
+                {heroSecondary[1] ? (
+                  <TemplatePreview document={heroSecondary[1].build()} width={240} />
+                ) : null}
               </div>
 
-              <div className="absolute -bottom-2 right-0 rounded-2xl border border-white/15 bg-white/10 px-4 py-3 text-right backdrop-blur-md sm:right-2">
+              <div className="absolute -bottom-3 right-0 rounded-2xl border border-white/15 bg-white/10 px-4 py-3 text-right backdrop-blur-md sm:right-2">
                 <p className="text-[10px] font-bold uppercase tracking-widest text-brand-200">
                   A4 · A5 · A6 · Carré
                 </p>
@@ -145,8 +271,68 @@ export default async function HomePage() {
                   {new Intl.NumberFormat("fr-MG").format(PHOTOBOOK_BASE_PRICE_MGA)} Ar
                 </p>
               </div>
+
+              <span className="absolute left-0 top-0 rounded-full bg-brand-500 px-3 py-1 text-[10px] font-black uppercase tracking-wide text-white shadow-lg">
+                Livre photo relié
+              </span>
             </div>
+
+            <p className="mt-6 text-center text-[11px] text-slate-400">
+              {t("home.heroNote")}
+            </p>
           </FadeIn>
+        </div>
+      </section>
+
+      {/* ------------------------------------------------------- Vitrine photos */}
+      <section className="border-b border-sand-200 bg-sand-50/70 py-16 sm:py-20 dark:bg-sand-100/40">
+        <div className="container-page">
+          <div className="flex flex-wrap items-end justify-between gap-4">
+            <Reveal className="max-w-2xl">
+              <span className="text-[11px] font-bold uppercase tracking-[0.2em] text-brand-600">
+                {t("home.showcaseEyebrow")}
+              </span>
+              <h2 className="section-title mt-2 text-3xl sm:text-4xl">
+                {t("home.showcaseTitle")}
+              </h2>
+              <p className="muted mt-3 max-w-xl text-base leading-relaxed">
+                {t("home.showcaseSubtitle")}
+              </p>
+            </Reveal>
+            <Link
+              href="/produits"
+              className="inline-flex items-center gap-1.5 text-sm font-bold text-brand-700 hover:underline dark:text-brand-300"
+            >
+              {t("home.showcaseCta")} <ArrowRight className="h-4 w-4" />
+            </Link>
+          </div>
+
+          <div className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {showcaseItems.map((item, index) => (
+              <Reveal key={item.key} delay={index * 0.04}>
+                <figure className="group relative overflow-hidden rounded-2xl bg-sand-100 ring-1 ring-sand-200">
+                  <div className="h-60 overflow-hidden sm:h-64">
+                    {item.imageUrl ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={item.imageUrl}
+                        alt={item.title}
+                        className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-[1.04]"
+                      />
+                    ) : item.document ? (
+                      <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-sand-100 via-sand-50 to-brand-50/60 p-3 dark:from-sand-200 dark:via-sand-100 dark:to-brand-900/30">
+                        <TemplatePreview document={item.document} width={195} />
+                      </div>
+                    ) : null}
+                  </div>
+                  <figcaption className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 via-black/35 to-transparent p-4">
+                    <p className="text-sm font-bold text-white">{item.title}</p>
+                    <p className="mt-0.5 text-[11px] text-white/80">{item.subtitle}</p>
+                  </figcaption>
+                </figure>
+              </Reveal>
+            ))}
+          </div>
         </div>
       </section>
 
@@ -198,7 +384,7 @@ export default async function HomePage() {
 
           <div className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             {gallery.map(({ template, document }, index) => (
-              <Reveal key={template.id} delay={index * 0.05}>
+              <Reveal key={template.id} delay={index * 0.04}>
                 <article className="group card overflow-hidden p-3 transition-shadow hover:shadow-md">
                   <div className="flex justify-center overflow-hidden rounded-xl bg-sand-100 p-3">
                     <TemplatePreview document={document} width={190} />
@@ -223,8 +409,73 @@ export default async function HomePage() {
         </div>
       </section>
 
+      {/* ------------------------------------------------------ Motifs & thèmes */}
+      <section className="container-page py-16 sm:py-20">
+        <div className="grid gap-10 lg:grid-cols-[1fr_1.2fr] lg:items-start">
+          <Reveal>
+            <span className="text-[11px] font-bold uppercase tracking-[0.2em] text-brand-600">
+              {t("editor.bgPattern")}
+            </span>
+            <h2 className="section-title mt-2 text-3xl sm:text-4xl">
+              {t("home.motifsTitle")}
+            </h2>
+            <p className="muted mt-3 max-w-xl text-base leading-relaxed">
+              {t("home.motifsSubtitle")}
+            </p>
+            <p className="muted mt-4 text-xs font-semibold">{t("home.motifsHint")}</p>
+
+            <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-3">
+              {motifs.map((motif) => (
+                <div key={motif.key} className="card p-2">
+                  <div
+                    className="h-16 rounded-lg ring-1 ring-sand-300"
+                    style={{ background: backgroundToCss(motif.background) }}
+                    aria-hidden
+                  />
+                  <p className="mt-1.5 text-center text-[11px] font-semibold">
+                    {t(motif.key)}
+                  </p>
+                </div>
+              ))}
+            </div>
+          </Reveal>
+
+          <Reveal delay={0.06}>
+            <h3 className="text-lg font-bold">{t("home.themesTitle")}</h3>
+            <p className="muted mt-1 text-sm">{t("home.themesSubtitle")}</p>
+
+            <div className="mt-4 grid gap-3 sm:grid-cols-2">
+              {THEMES.map((theme) => (
+                <Link
+                  key={theme.id}
+                  href="/creer"
+                  className="group card flex items-start gap-3 p-4 transition hover:border-brand-300 hover:shadow-md"
+                >
+                  <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-brand-50 text-xl dark:bg-brand-900/40">
+                    {theme.emoji}
+                  </span>
+                  <span className="min-w-0">
+                    <span className="block text-sm font-bold group-hover:text-brand-700 dark:group-hover:text-brand-300">
+                      {locale === "mg" ? theme.nameMg : theme.nameFr}
+                    </span>
+                    <span className="muted mt-0.5 block text-[11px] leading-snug">
+                      {locale === "mg" ? theme.descriptionMg : theme.descriptionFr}
+                    </span>
+                  </span>
+                  <ArrowRight className="ml-auto h-4 w-4 shrink-0 text-ink-400 transition group-hover:translate-x-0.5 group-hover:text-brand-600" />
+                </Link>
+              ))}
+            </div>
+
+            <Link href="/creer" className="btn-outline mt-4 w-full py-2.5 text-sm">
+              <Sparkles className="h-4 w-4" /> {t("home.motifsCta")}
+            </Link>
+          </Reveal>
+        </div>
+      </section>
+
       {/* ------------------------------------------------------------- Prix */}
-      <section id="prix" className="container-page py-16 sm:py-20">
+      <section id="prix" className="container-page pb-16 sm:pb-20">
         <div className="grid gap-10 lg:grid-cols-[1fr_26rem] lg:items-center">
           <Reveal>
             <span className="text-[11px] font-bold uppercase tracking-[0.2em] text-brand-600">
@@ -275,6 +526,92 @@ export default async function HomePage() {
           <Reveal delay={0.08}>
             <PriceTeaser />
           </Reveal>
+        </div>
+      </section>
+
+      {/* -------------------------------------------------------------- Avis */}
+      <section id="avis" className="border-y border-sand-200 bg-card py-16 sm:py-20">
+        <div className="container-page">
+          <div className="flex flex-wrap items-end justify-between gap-4">
+            <Reveal className="max-w-2xl">
+              <span className="inline-flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-[0.2em] text-brand-600">
+                <Star className="h-3.5 w-3.5" /> {t("review.summary")}
+              </span>
+              <h2 className="section-title mt-2 text-3xl sm:text-4xl">
+                {t("home.reviewsTitle")}
+              </h2>
+              <p className="muted mt-3 text-base leading-relaxed">
+                {t("home.reviewsSubtitle")}
+              </p>
+            </Reveal>
+            <Link
+              href="/produits/photobook"
+              className="inline-flex items-center gap-1.5 text-sm font-bold text-brand-700 hover:underline dark:text-brand-300"
+            >
+              {t("home.reviewsSee")} <ArrowRight className="h-4 w-4" />
+            </Link>
+          </div>
+
+          {latestReviews.length > 0 ? (
+            <div className="mt-8 grid gap-4 lg:grid-cols-[18rem_1fr]">
+              <Reveal>
+                <div className="card flex h-full flex-col justify-center p-6 text-center">
+                  <p className="text-5xl font-black tracking-tight text-ink-900">
+                    {averageRating.toFixed(1)}
+                  </p>
+                  <Stars value={averageRating} size="lg" className="mt-2 justify-center" />
+                  <p className="muted mt-2 text-sm">
+                    {t("review.average")} · {t("review.count", { count: reviewCount })}
+                  </p>
+                  <p className="muted mt-4 text-[11px] leading-relaxed">
+                    {t("home.reviewsTrust")}
+                  </p>
+                </div>
+              </Reveal>
+
+              <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+                {latestReviews.map((review, index) => (
+                  <Reveal key={review.id} delay={index * 0.05}>
+                    <article className="card flex h-full flex-col p-4">
+                      <Stars value={review.rating} size="sm" />
+                      <p className="mt-2 flex-1 text-sm leading-relaxed text-ink-700">
+                        {review.comment ?? t("review.verified")}
+                      </p>
+                      <div className="mt-3 flex items-center gap-2 border-t border-sand-200 pt-3">
+                        <span className="grid h-8 w-8 place-items-center rounded-full bg-brand-100 text-xs font-black text-brand-800 dark:bg-brand-900 dark:text-brand-100">
+                          {review.customerName.slice(0, 1).toUpperCase()}
+                        </span>
+                        <div className="min-w-0">
+                          <p className="truncate text-xs font-bold">{review.customerName}</p>
+                          <p className="text-[10px] text-ink-500">
+                            {t("review.verified")} ·{" "}
+                            {formatDate(review.createdAt, locale === "mg" ? "fr-MG" : "fr-FR")}
+                          </p>
+                        </div>
+                      </div>
+                    </article>
+                  </Reveal>
+                ))}
+              </div>
+            </div>
+          ) : (
+            <Reveal className="mt-8">
+              <div className="card flex flex-wrap items-center gap-5 p-6">
+                <div className="grid h-16 w-16 shrink-0 place-items-center rounded-2xl bg-amber-50 text-amber-500 dark:bg-amber-950/40">
+                  <Star className="h-8 w-8" fill="currentColor" strokeWidth={0} />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <Stars value={0} size="lg" />
+                  <p className="muted mt-2 max-w-2xl text-sm leading-relaxed">
+                    {t("review.empty")}
+                  </p>
+                </div>
+                <Link href="/produits/photobook" className="btn-outline text-sm">
+                  {t("home.reviewsSee")}
+                </Link>
+              </div>
+            </Reveal>
+          )}
         </div>
       </section>
 
@@ -398,4 +735,14 @@ export default async function HomePage() {
       </section>
     </div>
   );
+}
+
+/** Raccourci de lecture pour les vignettes de motifs. */
+function pattern(
+  id: Extract<PageBackground, { kind: "pattern" }>["pattern"],
+  color: string,
+  surface: string,
+  size = 64,
+): PageBackground {
+  return { kind: "pattern", pattern: id, color, surface, size };
 }

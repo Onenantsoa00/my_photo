@@ -6,8 +6,10 @@ import { notFound } from "next/navigation";
 import { ProductCard } from "@/components/product-card";
 import { ProductPurchasePanel } from "@/components/product-purchase-panel";
 import { ProductThumb } from "@/components/product-thumb";
+import { Stars } from "@/components/reviews/stars";
+import { formatDate, formatMga } from "@/lib/format";
+import { prisma } from "@/lib/prisma";
 import { productionNotices } from "@/lib/notices";
-import { formatMga } from "@/lib/format";
 import {
   PHOTOBOOK_BASE_PRICE_MGA,
   PHOTOBOOK_EXTRA_PAGE_MGA,
@@ -15,7 +17,7 @@ import {
   PHOTOBOOK_SLUG,
   findCover,
 } from "@/lib/photobook";
-import { translate } from "@/lib/i18n";
+import { translate, type TranslationKey } from "@/lib/i18n";
 import { getLocale } from "@/lib/locale.server";
 import {
   categoryDescription,
@@ -99,8 +101,33 @@ async function ProductDetail({
   product: NonNullable<Awaited<ReturnType<typeof getProductBySlug>>>;
 }) {
   const locale = await getLocale();
-  const t = (key: Parameters<typeof translate>[1]) => translate(locale, key);
+  const t = (key: TranslationKey, replacements?: Record<string, string | number>) =>
+    translate(locale, key, replacements);
   const name = productName(product, locale);
+
+  const [reviewStats, reviews] = await Promise.all([
+    prisma.review.aggregate({
+      where: { productId: product.id, isPublished: true },
+      _avg: { rating: true },
+      _count: true,
+    }),
+    prisma.review.findMany({
+      where: { productId: product.id, isPublished: true },
+      orderBy: { createdAt: "desc" },
+      take: 6,
+      select: {
+        id: true,
+        customerName: true,
+        rating: true,
+        comment: true,
+        createdAt: true,
+      },
+    }),
+  ]);
+
+  const averageRating = reviewStats._avg.rating ?? 0;
+  const galleryImages = product.images;
+  const mainImage = product.imageUrl ?? galleryImages[0]?.url ?? null;
 
   const cheapest = product.variants.reduce(
     (min, variant) => Math.min(min, variant.priceMga),
@@ -127,21 +154,40 @@ async function ProductDetail({
           <div className="aspect-[4/3] bg-sand-100">
             <ProductThumb
               categorySlug={product.category.slug}
-              imageUrl={product.imageUrl}
+              imageUrl={mainImage}
               label={name}
               locale={locale}
             />
           </div>
-          <div className="grid grid-cols-4 gap-2 p-3">
-            {product.variants.slice(0, 4).map((variant) => (
-              <div
-                key={variant.id}
-                className="grid aspect-square place-items-center rounded-lg bg-sand-100 p-1 text-center text-[11px] font-semibold text-ink-700"
-              >
-                {variant.label}
-              </div>
-            ))}
-          </div>
+
+          {galleryImages.length > 0 ? (
+            <div className="grid grid-cols-4 gap-2 p-3">
+              {galleryImages.slice(0, 4).map((image) => (
+                <div
+                  key={image.id}
+                  className="aspect-square overflow-hidden rounded-lg bg-sand-100 ring-1 ring-sand-200"
+                >
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={image.url}
+                    alt={image.altFr ?? name}
+                    className="h-full w-full object-cover"
+                  />
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="grid grid-cols-4 gap-2 p-3">
+              {product.variants.slice(0, 4).map((variant) => (
+                <div
+                  key={variant.id}
+                  className="grid aspect-square place-items-center rounded-lg bg-sand-100 p-1 text-center text-[11px] font-semibold text-ink-700"
+                >
+                  {variant.label}
+                </div>
+              ))}
+            </div>
+          )}
         </div>
 
         <div>
@@ -220,6 +266,53 @@ async function ProductDetail({
           </div>
         </div>
       </div>
+
+      {/* ----------------------------------------------------------- Avis */}
+      <section id="avis" className="mt-12 scroll-mt-24 border-t border-sand-200 pt-8">
+        <div className="flex flex-wrap items-end justify-between gap-4">
+          <div className="max-w-2xl">
+            <h2 className="text-2xl font-black tracking-tight">{t("review.summary")}</h2>
+            <p className="muted mt-1 text-sm">{t("home.reviewsSubtitle")}</p>
+          </div>
+
+          {reviewStats._count > 0 ? (
+            <div className="flex items-center gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 dark:border-amber-900 dark:bg-amber-950/40">
+              <span className="text-3xl font-black text-amber-900 dark:text-amber-100">
+                {averageRating.toFixed(1)}
+              </span>
+              <div>
+                <Stars value={averageRating} />
+                <p className="mt-0.5 text-[11px] font-semibold text-amber-800 dark:text-amber-200">
+                  {t("review.count", { count: reviewStats._count })}
+                </p>
+              </div>
+            </div>
+          ) : null}
+        </div>
+
+        {reviews.length > 0 ? (
+          <div className="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {reviews.map((review) => (
+              <article key={review.id} className="card p-4">
+                <Stars value={review.rating} size="sm" />
+                <p className="mt-2 text-sm leading-relaxed text-ink-700">
+                  {review.comment ?? t("review.verified")}
+                </p>
+                <p className="mt-3 border-t border-sand-200 pt-2 text-[11px] text-ink-500">
+                  <strong className="text-ink-700">{review.customerName}</strong> ·{" "}
+                  {t("review.verified")} ·{" "}
+                  {formatDate(review.createdAt, locale === "mg" ? "fr-MG" : "fr-FR")}
+                </p>
+              </article>
+            ))}
+          </div>
+        ) : (
+          <div className="card mt-5 flex flex-wrap items-center gap-4 p-5">
+            <Stars value={0} size="lg" />
+            <p className="muted min-w-0 flex-1 text-sm">{t("review.empty")}</p>
+          </div>
+        )}
+      </section>
     </div>
   );
 }

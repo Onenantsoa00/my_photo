@@ -7,6 +7,7 @@ import {
   LayoutDashboard,
   Package,
   Plus,
+  Star,
 } from "lucide-react";
 import Link from "next/link";
 import { redirect } from "next/navigation";
@@ -42,7 +43,10 @@ export default async function AccountPage() {
       where: { userId: user.id },
       orderBy: { createdAt: "desc" },
       take: 50,
-      include: { _count: { select: { items: true } } },
+      include: {
+        _count: { select: { items: true } },
+        review: { select: { rating: true } },
+      },
     }),
     listDesignsForUser(user.id),
     listCustomerNotifications(user.id, locale),
@@ -242,6 +246,20 @@ export default async function AccountPage() {
                 <div className="flex flex-wrap items-center gap-2">
                   <StatusBadge kind="order" value={order.status} locale={locale} />
                   <StatusBadge kind="payment" value={order.paymentStatus} locale={locale} />
+
+                  {order.review ? (
+                    <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-bold text-amber-700 dark:bg-amber-950/40 dark:text-amber-200">
+                      <Star className="h-3 w-3" fill="currentColor" strokeWidth={0} />
+                      {order.review.rating}/5
+                    </span>
+                  ) : order.status === "DELIVERED" ? (
+                    <Link
+                      href={`/commande/${order.reference}#avis`}
+                      className="inline-flex items-center gap-1 rounded-full bg-brand-50 px-2 py-0.5 text-[11px] font-bold text-brand-700 hover:underline dark:bg-brand-900/40 dark:text-brand-200"
+                    >
+                      <Star className="h-3 w-3" /> {t("review.yourRating")}
+                    </Link>
+                  ) : null}
                 </div>
 
                 <p className="w-28 text-right font-bold text-brand-700 dark:text-brand-300">

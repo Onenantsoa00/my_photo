@@ -12,6 +12,7 @@ type ProductCardProduct = {
   descriptionFr: string;
   descriptionMg: string | null;
   imageUrl: string | null;
+  images?: { url: string }[];
   variants: { priceMga: number }[];
   category: { slug: string; nameFr: string; nameMg: string };
 };
@@ -34,7 +35,7 @@ export function ProductCard({
       <div className="relative aspect-[4/3] overflow-hidden bg-sand-100">
         <ProductThumb
           categorySlug={product.category.slug}
-          imageUrl={product.imageUrl}
+          imageUrl={product.imageUrl ?? product.images?.[0]?.url ?? null}
           label={name}
           locale={locale}
           className="transition-transform duration-300 group-hover:scale-105"

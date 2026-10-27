@@ -1,14 +1,17 @@
 import type { Metadata } from "next";
 
+import { ImageField } from "@/components/admin/image-field";
 import { ConfirmSubmit } from "@/components/confirm-submit";
 import { formatMga } from "@/lib/format";
 import { translate } from "@/lib/i18n";
 import { getLocale } from "@/lib/locale.server";
 import { prisma } from "@/lib/prisma";
 import {
+  addProductImageAction,
   createProductAction,
   createVariantAction,
   deleteProductAction,
+  deleteProductImageAction,
   deleteVariantAction,
   updateProductAction,
   updateVariantAction,
@@ -32,6 +35,7 @@ export default async function AdminProductsPage() {
       include: {
         category: { select: { nameFr: true, nameMg: true } },
         variants: { orderBy: { sortOrder: "asc" } },
+        images: { orderBy: { sortOrder: "asc" } },
       },
     }),
   ]);
@@ -68,6 +72,14 @@ export default async function AdminProductsPage() {
               {t("admin.description")}
             </label>
             <input id="new-description" name="descriptionFr" className="input" />
+          </div>
+
+          <div className="lg:col-span-2">
+            <ImageField
+              name="imageUrl"
+              label={t("admin.productImage")}
+              hint={t("admin.productImageHint")}
+            />
           </div>
 
           <div>
@@ -200,6 +212,39 @@ export default async function AdminProductsPage() {
                   name="nameMg"
                   className="input"
                   defaultValue={product.nameMg}
+                />
+              </div>
+
+              <div className="lg:col-span-2">
+                <label className="label text-[11px]" htmlFor={`descriptionFr-${product.id}`}>
+                  {t("admin.description")} (FR)
+                </label>
+                <input
+                  id={`descriptionFr-${product.id}`}
+                  name="descriptionFr"
+                  className="input"
+                  defaultValue={product.descriptionFr}
+                />
+              </div>
+
+              <div className="lg:col-span-2">
+                <label className="label text-[11px]" htmlFor={`descriptionMg-${product.id}`}>
+                  {t("admin.description")} (MG)
+                </label>
+                <input
+                  id={`descriptionMg-${product.id}`}
+                  name="descriptionMg"
+                  className="input"
+                  defaultValue={product.descriptionMg ?? ""}
+                />
+              </div>
+
+              <div className="lg:col-span-2">
+                <ImageField
+                  name="imageUrl"
+                  label={t("admin.productImage")}
+                  hint={t("admin.productImageHint")}
+                  defaultValue={product.imageUrl}
                 />
               </div>
 
@@ -382,6 +427,78 @@ export default async function AdminProductsPage() {
                 <button type="submit" className="btn-outline btn-sm">
                   {t("admin.addVariant")}
                 </button>
+              </form>
+            </div>
+
+            {/* ------------------------------------- Vitrine de la page d'accueil */}
+            <div className="mt-5 border-t border-sand-200 pt-4">
+              <h3 className="text-xs font-bold uppercase tracking-wide text-ink-500">
+                {t("admin.gallery")} ({product.images.length})
+              </h3>
+              <p className="muted mt-1 text-xs">{t("admin.galleryHint")}</p>
+
+              {product.images.length > 0 ? (
+                <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                  {product.images.map((image) => (
+                    <div key={image.id} className="overflow-hidden rounded-xl border border-sand-200 bg-card">
+                      <div className="aspect-[4/3] bg-sand-100">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img
+                          src={image.url}
+                          alt={image.altFr ?? product.nameFr}
+                          className="h-full w-full object-cover"
+                        />
+                      </div>
+                      <div className="flex items-center gap-2 p-2">
+                        <p className="min-w-0 flex-1 truncate text-[11px] text-ink-500">
+                          {image.altFr ?? image.url}
+                        </p>
+                        <form action={deleteProductImageAction}>
+                          <input type="hidden" name="imageId" value={image.id} />
+                          <button type="submit" className="text-[11px] font-semibold text-accent-600 hover:underline">
+                            {t("common.delete")}
+                          </button>
+                        </form>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="muted mt-3 text-xs">{t("admin.noImages")}</p>
+              )}
+
+              <form
+                action={addProductImageAction}
+                className="mt-3 grid gap-3 rounded-xl border border-dashed border-sand-300 p-3 sm:grid-cols-2 lg:grid-cols-4"
+              >
+                <input type="hidden" name="productId" value={product.id} />
+
+                <div className="lg:col-span-2">
+                  <ImageField
+                    name="url"
+                    label={t("admin.imageUrl")}
+                    hint={t("admin.imageUrlHint")}
+                  />
+                </div>
+
+                <div>
+                  <label className="label text-[11px]" htmlFor={`altFr-${product.id}`}>
+                    {t("admin.imageAlt")} (FR)
+                  </label>
+                  <input id={`altFr-${product.id}`} name="altFr" className="input px-2 py-1.5 text-sm" />
+                </div>
+
+                <div className="flex items-end gap-2">
+                  <div className="min-w-0 flex-1">
+                    <label className="label text-[11px]" htmlFor={`altMg-${product.id}`}>
+                      {t("admin.imageAlt")} (MG)
+                    </label>
+                    <input id={`altMg-${product.id}`} name="altMg" className="input px-2 py-1.5 text-sm" />
+                  </div>
+                  <button type="submit" className="btn-outline btn-sm">
+                    {t("admin.addImage")}
+                  </button>
+                </div>
               </form>
             </div>
           </section>
