@@ -147,9 +147,14 @@ export async function saveDesignAction(
 
   // On ne réutilise un enregistrement existant que s'il appartient déjà à
   // l'appelant : sinon l'identifiant fourni écraserait la création d'autrui.
+  // Un administrateur ouvre les créations des clients pour les exporter à
+  // l'impression : ses modifications se posent sur l'enregistrement d'origine,
+  // il n'y a pas de copie parasite au nom de l'équipe.
   if (input.designId) {
     const existing = await prisma.design.findFirst({
-      where: { id: input.designId, ...ownerWhere },
+      where: owner.admin
+        ? { id: input.designId }
+        : { id: input.designId, ...ownerWhere },
       select: { id: true },
     });
 

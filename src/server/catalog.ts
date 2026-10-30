@@ -31,6 +31,57 @@ export async function listProducts(options: { categorySlug?: string } = {}) {
   });
 }
 
+/**
+ * Produits demandés par identifiant, dans l'ordre fourni (classement des
+ * meilleures ventes par exemple).
+ */
+export async function listProductsByIds(ids: string[]) {
+  if (ids.length === 0) return [];
+
+  const products = await prisma.product.findMany({
+    where: { id: { in: ids }, isActive: true },
+    include: {
+      category: { select: { slug: true, nameFr: true, nameMg: true } },
+      variants: {
+        where: { isActive: true },
+        orderBy: { sortOrder: "asc" },
+      },
+      images: { orderBy: { sortOrder: "asc" }, take: 1 },
+    },
+  });
+
+  return ids
+    .map((id) => products.find((product) => product.id === id))
+    .filter((product): product is (typeof products)[number] => Boolean(product));
+}
+
+/**
+ * Produits les plus commandés : somme des quantités vendues, en ignorant les
+ * commandes annulées. Sert à la section « Top ventes » de la vitrine.
+ */
+export async function listTopSellingProducts(take = 3) {
+  const ranked = await prisma.orderItem.groupBy({
+    by: ["productId"],
+    where: { order: { status: { not: "CANCELLED" } } },
+    _sum: { quantity: true },
+    orderBy: { _sum: { quantity: "desc" } },
+    take,
+  });
+
+  // Un article de commande garde son libellé même si le produit est supprimé :
+  // seuls les identifiants encore présents entrent dans le classement.
+  const products = await listProductsByIds(
+    ranked
+      .map((row) => row.productId)
+      .filter((id): id is string => Boolean(id)),
+  );
+
+  return products.map((product) => ({
+    product,
+    sold: ranked.find((row) => row.productId === product.id)?._sum.quantity ?? 0,
+  }));
+}
+
 export async function listFeaturedProducts(take = 4) {
   return prisma.product.findMany({
     where: { isActive: true, isFeatured: true },

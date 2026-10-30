@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
 
 import { formatDate } from "@/lib/format";
 import { prisma } from "@/lib/prisma";
@@ -73,6 +74,9 @@ export async function updateOrderStatusAction(formData: FormData): Promise<void>
   revalidatePath("/admin/commandes");
   revalidatePath(`/admin/commandes/${orderId}`);
   revalidatePath("/compte");
+
+  // Le back-office confirme l'enregistrement par une notification.
+  redirect(`/admin/commandes/${orderId}?saved=1`);
 }
 
 /**
@@ -146,6 +150,9 @@ export async function reviewPaymentAction(formData: FormData): Promise<void> {
   revalidatePath("/admin/commandes");
   revalidatePath(`/admin/commandes/${orderId}`);
   revalidatePath("/compte");
+
+  // Le back-office confirme l'enregistrement par une notification.
+  redirect(`/admin/commandes/${orderId}?saved=1`);
 }
 
 export async function updateVariantAction(formData: FormData): Promise<void> {
@@ -165,6 +172,8 @@ export async function updateVariantAction(formData: FormData): Promise<void> {
 
   revalidatePath("/admin/produits");
   revalidatePath("/", "layout");
+
+  redirect("/admin/produits?saved=1");
 }
 
 export async function updateProductAction(formData: FormData): Promise<void> {
@@ -201,6 +210,8 @@ export async function updateProductAction(formData: FormData): Promise<void> {
   revalidatePath("/admin/produits");
   revalidatePath("/produits", "layout");
   revalidatePath("/", "layout");
+
+  redirect("/admin/produits?saved=1");
 }
 
 /** Ajoute une photo à la vitrine (page d'accueil et fiche produit). */
@@ -239,6 +250,8 @@ export async function addProductImageAction(formData: FormData): Promise<void> {
   revalidatePath("/admin/produits");
   revalidatePath("/produits", "layout");
   revalidatePath("/", "layout");
+
+  redirect("/admin/produits?saved=1");
 }
 
 export async function deleteProductImageAction(formData: FormData): Promise<void> {
@@ -253,6 +266,8 @@ export async function deleteProductImageAction(formData: FormData): Promise<void
   revalidatePath("/admin/produits");
   revalidatePath("/produits", "layout");
   revalidatePath("/", "layout");
+
+  redirect("/admin/produits?saved=1");
 }
 
 export async function updateDeliveryZoneAction(formData: FormData): Promise<void> {
@@ -286,6 +301,8 @@ export async function updateDeliveryZoneAction(formData: FormData): Promise<void
   revalidatePath("/admin/zones");
   revalidatePath("/commande");
   revalidatePath("/", "layout");
+
+  redirect("/admin/zones?saved=1");
 }
 
 // ---------------------------------------------------------------------------
@@ -394,6 +411,8 @@ export async function createProductAction(formData: FormData): Promise<void> {
 
   revalidatePath("/admin/produits");
   revalidatePath("/", "layout");
+
+  redirect("/admin/produits?saved=1");
 }
 
 /**
@@ -415,6 +434,8 @@ export async function deleteProductAction(formData: FormData): Promise<void> {
   revalidatePath("/admin/produits");
   revalidatePath("/produits");
   revalidatePath("/", "layout");
+
+  redirect("/admin/produits?saved=1");
 }
 
 export async function createVariantAction(formData: FormData): Promise<void> {
@@ -455,6 +476,8 @@ export async function createVariantAction(formData: FormData): Promise<void> {
 
   revalidatePath("/admin/produits");
   revalidatePath("/", "layout");
+
+  redirect("/admin/produits?saved=1");
 }
 
 export async function deleteVariantAction(formData: FormData): Promise<void> {
@@ -479,6 +502,8 @@ export async function deleteVariantAction(formData: FormData): Promise<void> {
 
   revalidatePath("/admin/produits");
   revalidatePath("/", "layout");
+
+  redirect("/admin/produits?saved=1");
 }
 
 export async function createDeliveryZoneAction(formData: FormData): Promise<void> {
@@ -509,6 +534,8 @@ export async function createDeliveryZoneAction(formData: FormData): Promise<void
   revalidatePath("/admin/zones");
   revalidatePath("/commande");
   revalidatePath("/", "layout");
+
+  redirect("/admin/zones?saved=1");
 }
 
 export async function deleteDeliveryZoneAction(formData: FormData): Promise<void> {
@@ -525,4 +552,6 @@ export async function deleteDeliveryZoneAction(formData: FormData): Promise<void
   revalidatePath("/admin/zones");
   revalidatePath("/commande");
   revalidatePath("/", "layout");
+
+  redirect("/admin/zones?saved=1");
 }

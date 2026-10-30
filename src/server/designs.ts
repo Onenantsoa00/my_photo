@@ -13,6 +13,12 @@ import { ensureCartSessionId, getCartSessionId, getSessionUser } from "@/server/
 export type DesignOwner = {
   userId: string | null;
   guestSessionId: string | null;
+  /**
+   * L'équipe d'impression travaille sur les créations des clients : un
+   * administrateur peut ouvrir n'importe laquelle pour la télécharger et
+   * fabriquer le livre.
+   */
+  admin: boolean;
 };
 
 export async function resolveDesignOwner(
@@ -21,7 +27,7 @@ export async function resolveDesignOwner(
   const user = await getSessionUser();
 
   if (user) {
-    return { userId: user.id, guestSessionId: null };
+    return { userId: user.id, guestSessionId: null, admin: user.role === "ADMIN" };
   }
 
   // `create` écrit le cookie de session : réservé aux Server Actions.
@@ -29,7 +35,7 @@ export async function resolveDesignOwner(
     ? await ensureCartSessionId()
     : await getCartSessionId();
 
-  return { userId: null, guestSessionId };
+  return { userId: null, guestSessionId, admin: false };
 }
 
 /**
@@ -51,10 +57,16 @@ const DESIGN_INCLUDE = {
   product: { select: { id: true, slug: true, nameFr: true, nameMg: true } },
 } as const;
 
-/** Charge une création si, et seulement si, elle appartient à l'appelant. */
+/** Charge une création : celle de l'appelant, ou n'importe laquelle pour l'équipe. */
 export async function getOwnedDesign(designId: string) {
   const owner = await resolveDesignOwner();
   const where = designOwnerWhere(owner);
+
+  // L'administrateur vient de la fiche commande : il ouvre la création du
+  // client pour l'exporter à l'impression. Aucun autre rôle n'a ce passe-droit.
+  if (owner.admin) {
+    return prisma.design.findFirst({ where: { id: designId }, include: DESIGN_INCLUDE });
+  }
 
   if (!where) return null;
 

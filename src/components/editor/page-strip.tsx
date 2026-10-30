@@ -27,6 +27,9 @@ export function PageStrip({
 }) {
   const t = useT();
   const canDelete = pages.length > minPages;
+  // La vignette fait 48 px de large : le motif doit être réduit d'autant pour
+  // montrer la même densité que la page imprimée.
+  const thumbScale = 48 / Math.max(1, canvas.width);
 
   return (
     <div className="flex items-center gap-2 border-b border-sand-200 bg-card px-2 py-2">
@@ -46,7 +49,7 @@ export function PageStrip({
                   ? "border-brand-600 shadow-sm ring-2 ring-brand-500/20"
                   : "border-sand-300 opacity-80 hover:border-brand-300 hover:opacity-100"
               }`}
-              style={{ background: backgroundToCss(page.background) }}
+              style={{ background: backgroundToCss(page.background, thumbScale) }}
             >
               <span className="pointer-events-none absolute inset-1 overflow-hidden rounded-sm">
                 {page.layers.slice(0, 4).map((layer) => (

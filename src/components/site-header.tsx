@@ -14,6 +14,7 @@ export async function SiteHeader({ locale }: { locale: Locale }) {
   const links: HeaderLink[] = [
     { href: "/", label: t("nav.home") },
     { href: "/produits", label: t("nav.photobooks") },
+    { href: "/suivi", label: t("nav.tracking") },
     { href: "/creer", label: t("nav.editor"), primary: true },
   ];
 

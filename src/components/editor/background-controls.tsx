@@ -1,5 +1,7 @@
 "use client";
 
+import { MoveHorizontal, MoveVertical, RotateCcw, ZoomIn, ZoomOut } from "lucide-react";
+
 import { useT } from "@/components/locale-provider";
 import {
   BACKGROUND_PATTERNS,
@@ -203,7 +205,7 @@ export function BackgroundControls({
                       ? "ring-2 ring-brand-600"
                       : "ring-sand-300 hover:ring-brand-400"
                   }`}
-                  style={{ background: backgroundToCss(preview) }}
+                  style={{ background: backgroundToCss(preview, 0.45) }}
                 />
               );
             })}
@@ -253,6 +255,110 @@ export function BackgroundControls({
                 {t(option.key)}
               </button>
             ))}
+          </div>
+
+          {/* Agrandir / réduire / ajuster le motif choisi. */}
+          <div className="rounded-xl bg-sand-100 p-2 dark:bg-sand-200/60">
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-[11px] font-semibold text-ink-600">
+                {t("editor.bgSize")}
+              </span>
+              <span className="tabular-nums text-[11px] font-bold text-ink-800">
+                {Math.round(background.size)} px
+              </span>
+            </div>
+
+            <div className="mt-1 flex items-center gap-2">
+              <button
+                type="button"
+                title={t("editor.bgShrink")}
+                aria-label={t("editor.bgShrink")}
+                onClick={() =>
+                  onChange({
+                    ...background,
+                    size: Math.max(16, background.size - 8),
+                  })
+                }
+                className="grid h-7 w-7 shrink-0 place-items-center rounded-lg border border-sand-300 bg-card text-ink-700 hover:border-brand-400"
+              >
+                <ZoomOut className="h-3.5 w-3.5" />
+              </button>
+
+              <input
+                type="range"
+                min={16}
+                max={256}
+                step={4}
+                value={background.size}
+                aria-label={t("editor.bgSize")}
+                onChange={(event) =>
+                  onChange({ ...background, size: Number(event.target.value) })
+                }
+                className="h-1.5 min-w-0 flex-1 cursor-pointer appearance-none rounded-full bg-sand-300 accent-brand-600"
+              />
+
+              <button
+                type="button"
+                title={t("editor.bgEnlarge")}
+                aria-label={t("editor.bgEnlarge")}
+                onClick={() =>
+                  onChange({
+                    ...background,
+                    size: Math.min(256, background.size + 8),
+                  })
+                }
+                className="grid h-7 w-7 shrink-0 place-items-center rounded-lg border border-sand-300 bg-card text-ink-700 hover:border-brand-400"
+              >
+                <ZoomIn className="h-3.5 w-3.5" />
+              </button>
+            </div>
+
+            <div className="mt-2 grid grid-cols-2 gap-2">
+              <label className="block">
+                <span className="mb-0.5 flex items-center gap-1 text-[10px] font-semibold text-ink-600">
+                  <MoveHorizontal className="h-3 w-3" /> {t("editor.bgOffsetX")}
+                </span>
+                <input
+                  type="range"
+                  min={-256}
+                  max={256}
+                  step={4}
+                  value={background.offsetX ?? 0}
+                  aria-label={t("editor.bgOffsetX")}
+                  onChange={(event) =>
+                    onChange({ ...background, offsetX: Number(event.target.value) })
+                  }
+                  className="h-1.5 w-full cursor-pointer appearance-none rounded-full bg-sand-300 accent-brand-600"
+                />
+              </label>
+
+              <label className="block">
+                <span className="mb-0.5 flex items-center gap-1 text-[10px] font-semibold text-ink-600">
+                  <MoveVertical className="h-3 w-3" /> {t("editor.bgOffsetY")}
+                </span>
+                <input
+                  type="range"
+                  min={-256}
+                  max={256}
+                  step={4}
+                  value={background.offsetY ?? 0}
+                  aria-label={t("editor.bgOffsetY")}
+                  onChange={(event) =>
+                    onChange({ ...background, offsetY: Number(event.target.value) })
+                  }
+                  className="h-1.5 w-full cursor-pointer appearance-none rounded-full bg-sand-300 accent-brand-600"
+                />
+              </label>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => onChange({ ...background, offsetX: 0, offsetY: 0 })}
+              disabled={!background.offsetX && !background.offsetY}
+              className="mt-2 inline-flex w-full items-center justify-center gap-1.5 rounded-lg border border-sand-300 bg-card py-1.5 text-[11px] font-semibold text-ink-700 hover:border-brand-400 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <RotateCcw className="h-3 w-3" /> {t("editor.bgRecenter")}
+            </button>
           </div>
         </div>
       ) : null}

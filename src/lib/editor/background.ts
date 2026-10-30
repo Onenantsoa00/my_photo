@@ -56,6 +56,9 @@ export type BackgroundPattern = {
   surface: string;
   /** Taille de la répétition, en pixels de plan de travail. */
   size: number;
+  /** Décalage du motif, en pixels : sert à « ajuster » le fond à la page. */
+  offsetX?: number;
+  offsetY?: number;
 };
 
 export type PageBackground = BackgroundSolid | BackgroundGradient | BackgroundPattern;
@@ -147,6 +150,8 @@ export function normalizeBackground(
         color: colorOr(candidate.color, "#cbd5e1"),
         surface: colorOr(candidate.surface, "#ffffff"),
         size: Math.min(256, Math.max(8, Math.round(numberOr(candidate.size, 64)))),
+        offsetX: Math.min(512, Math.max(-512, Math.round(numberOr(candidate.offsetX, 0)))),
+        offsetY: Math.min(512, Math.max(-512, Math.round(numberOr(candidate.offsetY, 0)))),
       };
     }
   }
@@ -166,70 +171,104 @@ export function backgroundBaseColor(background: PageBackground): string {
   return background.color;
 }
 
-/** Équivalent CSS, pour les vignettes rendues en DOM. */
-export function backgroundToCss(background: PageBackground): string {
+/**
+ * Équivalent CSS, pour les vignettes rendues en DOM.
+ *
+ * `scale` est le rapport entre la vignette et le plan de travail : un motif de
+ * 64 px sur une page de 1500 px doit apparaître à 64 × échelle pour que la
+ * vignette montre vraiment ce qui sera imprimé.
+ */
+export function backgroundToCss(background: PageBackground, scale = 1): string {
   if (background.kind === "solid") return background.color;
 
   if (background.kind === "gradient") {
     return `linear-gradient(${background.angle}deg, ${background.from}, ${background.to})`;
   }
 
+  if (scale !== 1) {
+    const ratio = Math.max(0.05, scale);
+    background = {
+      ...background,
+      size: Math.max(2, Math.round(background.size * ratio)),
+      offsetX: Math.round((background.offsetX ?? 0) * ratio),
+      offsetY: Math.round((background.offsetY ?? 0) * ratio),
+    };
+  }
+
+  // Tous les motifs sont décrits en SVG : le même dessin sert à la vignette
+  // DOM et, en miroir, à la tuile du canevas d'impression. Le décalage choisi
+  // par le client décale la tuile sans jamais casser la répétition.
+  const spec = patternTileSpec(background);
+  return svgTile(
+    spec.svg,
+    spec.tile,
+    background.surface,
+    background.offsetX ?? 0,
+    background.offsetY ?? 0,
+  );
+}
+
+/**
+ * Dessin SVG d'une tuile et sa dimension réelle (le damier occupe deux cases).
+ * Exporté pour que le canevas d'impression puisse dessiner exactement la même
+ * géométrie que la vignette.
+ */
+export function patternTileSpec(
+  background: BackgroundPattern,
+): { svg: string; tile: number } {
   const { pattern, color, surface, size } = background;
   const half = Math.max(2, Math.round(size / 2));
   const dot = Math.max(1, Math.round(size / 8));
   const stroke = Math.max(1, Math.round(size / 10));
-  // Espacement perpendiculaire des bandes diagonales de période `size`.
-  const diagonal = Math.max(4, Math.round(size * 0.7071));
 
-  // Les motifs décoratifs sont décrits en SVG : le même dessin sert à la
-  // vignette DOM et, en miroir, à la tuile du canevas d'impression.
   switch (pattern) {
     case "flowers":
-      return svgTile(flowerTile(size, color, surface), size, surface);
+      return { svg: flowerTile(size, color, surface), tile: size };
     case "floral":
-      return svgTile(floralTile(size, color, surface), size, surface);
+      return { svg: floralTile(size, color, surface), tile: size };
     case "monogram":
-      return svgTile(monogramTile(size, color, surface), size, surface);
+      return { svg: monogramTile(size, color, surface), tile: size };
     case "gold":
-      return svgTile(goldTile(size, color, surface), size, surface);
+      return { svg: goldTile(size, color, surface), tile: size };
     case "hearts":
-      return svgTile(heartsTile(size, color, surface), size, surface);
+      return { svg: heartsTile(size, color, surface), tile: size };
     case "stars":
-      return svgTile(starsTile(size, color, surface), size, surface);
+      return { svg: starsTile(size, color, surface), tile: size };
     case "leaves":
-      return svgTile(leavesTile(size, color, surface), size, surface);
+      return { svg: leavesTile(size, color, surface), tile: size };
     case "waves":
-      return svgTile(wavesTile(size, color, surface), size, surface);
+      return { svg: wavesTile(size, color, surface), tile: size };
     case "deco":
-      return svgTile(decoTile(size, color, surface), size, surface);
+      return { svg: decoTile(size, color, surface), tile: size };
     case "marble":
-      return svgTile(marbleTile(size, color, surface), size, surface);
-    case "grid":
-      return (
-        `repeating-linear-gradient(90deg, ${color} 0 1px, transparent 1px ${size}px), ` +
-        `repeating-linear-gradient(0deg, ${color} 0 1px, transparent 1px ${size}px), ` +
-        surface
-      );
-    case "stripes":
-      return (
-        `repeating-linear-gradient(180deg, ${color} 0 ${half}px, ` +
-        `${surface} ${half}px ${size}px)`
-      );
-    case "diagonal":
-      return (
-        `repeating-linear-gradient(45deg, ${color} 0 ${stroke}px, ` +
-        `${surface} ${stroke}px ${stroke + diagonal}px)`
-      );
-    case "checker":
-      return (
-        `repeating-conic-gradient(${color} 0% 25%, ${surface} 0% 50%) ` +
-        `0 0 / ${size * 2}px ${size * 2}px`
-      );
-    default:
-      return (
-        `radial-gradient(circle, ${color} ${dot}px, transparent ${dot}px) ` +
-        `0 0 / ${size}px ${size}px, ${surface}`
-      );
+      return { svg: marbleTile(size, color, surface), tile: size };
+    case "grid": {
+      const line = `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}"><rect width="${size}" height="${size}" fill="${surface}"/><rect width="${size}" height="1" fill="${color}"/><rect width="1" height="${size}" fill="${color}"/></svg>`;
+      return { svg: line, tile: size };
+    }
+    case "stripes": {
+      const lines = `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}"><rect width="${size}" height="${size}" fill="${surface}"/><rect width="${size}" height="${half}" fill="${color}"/></svg>`;
+      return { svg: lines, tile: size };
+    }
+    case "diagonal": {
+      const lines = [0, size, size * 2]
+        .map(
+          (offset) =>
+            `<line x1="0" y1="${round(offset)}" x2="${size}" y2="${round(offset - size)}"/>`,
+        )
+        .join("");
+      const tile = `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}"><rect width="${size}" height="${size}" fill="${surface}"/><g stroke="${color}" stroke-width="${stroke}">${lines}</g></svg>`;
+      return { svg: tile, tile: size };
+    }
+    case "checker": {
+      const side = size * 2;
+      const tile = `<svg xmlns="http://www.w3.org/2000/svg" width="${side}" height="${side}" viewBox="0 0 ${side} ${side}"><rect width="${side}" height="${side}" fill="${surface}"/><rect x="${size}" width="${size}" height="${size}" fill="${color}"/><rect y="${size}" width="${size}" height="${size}" fill="${color}"/></svg>`;
+      return { svg: tile, tile: side };
+    }
+    default: {
+      const tile = `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}"><rect width="${size}" height="${size}" fill="${surface}"/><circle cx="${round(size / 2)}" cy="${round(size / 2)}" r="${dot}" fill="${color}"/></svg>`;
+      return { svg: tile, tile: size };
+    }
   }
 }
 
@@ -283,7 +322,8 @@ export function patternTile(background: BackgroundPattern): HTMLCanvasElement | 
   switch (background.pattern) {
     case "dots": {
       ctx.beginPath();
-      ctx.arc(side / 2, side / 2, Math.max(1.5, size / 8), 0, Math.PI * 2);
+      // Même rayon que la tuile SVG, pour un aperçu fidèle à l'impression.
+      ctx.arc(side / 2, side / 2, Math.max(1, size / 8), 0, Math.PI * 2);
       ctx.fill();
       break;
     }
@@ -480,8 +520,19 @@ const GOLD_FLECKS: [number, number, number][] = [
   [0.08, 0.52, 0.012],
 ];
 
-function svgTile(svg: string, size: number, surface: string): string {
-  return `url("data:image/svg+xml,${encodeURIComponent(svg)}") 0 0 / ${size}px ${size}px repeat, ${surface}`;
+function svgTile(
+  svg: string,
+  size: number,
+  surface: string,
+  offsetX = 0,
+  offsetY = 0,
+): string {
+  // Le décalage est ramené dans une période : le rendu est identique mais les
+  // valeurs transmises au DOM restent petites et stables.
+  const left = Math.round(offsetX) % size;
+  const top = Math.round(offsetY) % size;
+
+  return `url("data:image/svg+xml,${encodeURIComponent(svg)}") ${left}px ${top}px / ${size}px ${size}px repeat, ${surface}`;
 }
 
 function round(value: number): number {

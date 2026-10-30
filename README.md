@@ -1,13 +1,15 @@
 # MyPhoto Mada
 
-Application web de **photobox pour Madagascar** : tirages photo, cadres, albums, mugs,
-t-shirts et affiches personnalisés, avec un **atelier de création en ligne type Canva**.
+Application web de **photobooks pour Madagascar** : livres photo en papier A4, A5, A6
+ou carré, avec un **atelier de création en ligne type Canva**.
 
 Le client compose son visuel dans le navigateur (texte, photos, formes, calques,
-filtres), l'exporte en PNG/JPG prêt pour l'impression 300 dpi, puis le commande.
-Il paie par **Mobile Money** (MVola, Orange Money, Airtel Money), par **virement
-bancaire** ou **à la livraison**, et l'équipe valide la production depuis un
-back-office.
+filtres, fonds à motif) et le commande depuis l'atelier. Le fichier PNG/JPG prêt pour
+l'impression 300 dpi se télécharge **uniquement pour l'équipe** (admin) : c'est elle
+qui l'imprime et fabrique le livre. Le paiement se fait par **Mobile Money** (MVola,
+Orange Money) : le client saisit la référence de SMS reçue, l'administration valide
+quand elle reçoit les fonds et annonce le délai de livraison. La production se pilote
+depuis un back-office.
 
 ---
 
@@ -200,6 +202,13 @@ remonté à 1, ce qui donne **1500 × 2250 px, soit 381 dpi réels**, affichés 
 sous le canevas. Si la résolution descend sous 200 dpi, l'interface le signale.
 Le facteur est plafonné (8×, et 16 000 px de côté) pour ne pas produire un canevas que
 les navigateurs refusent de dessiner. Voir `src/lib/editor/export.ts`.
+
+**Ce téléchargement est réservé à l'administration.** Le bouton « PNG » / « JPG » n'est
+rendu que si la session est `ADMIN` (`canExport` passé par `/editeur`) : le client voit
+une mention « Téléchargement réservé à l'atelier d'impression » et commande depuis le
+panier. L'administrateur, lui, ouvre la création du client depuis la fiche commande et
+tlécharge le fichier à imprimer. Le rôle est lu côté serveur à l'affichage de la page :
+un client ne peut pas réactiver le bouton côté navigateur.
 
 ### 4.2 Atelier : modèle de document découplé de Konva
 
@@ -461,7 +470,7 @@ npm run probe          # sondes de robustesse
 > chose. C'est un piège d'environnement, pas un défaut de l'application — voir §9, bug n°6.
 
 `scripts/e2e.mjs` pilote un **vrai Chrome** (aucun navigateur téléchargé, il utilise
-celui du système) et exécute **51 vérifications** :
+celui du système) et exécute **72 vérifications** :
 
 - catalogue et tarifs lus depuis PostgreSQL, total recalculé selon le format et la
   quantité ;
@@ -474,14 +483,19 @@ celui du système) et exécute **51 vérifications** :
 - atelier : rendu du canevas Konva, calcul des 300 dpi, upload d'une photo générée par
   sharp et service effectif du fichier en `image/webp`, filtre de luminosité appliqué au
   clavier, **déplacement d'un calque à la souris** avec position resynchronisée dans le
-  panneau de réglages, application d'un modèle, téléchargement réel du PNG d'export ;
+  panneau de réglages, application d'un modèle ;
 - commande complète avec MVola puis paiement en attente de vérification ;
 - compte : commande **et** création du photobook retrouvées dans l'espace du client ;
 - back-office, validation du paiement, édition des produits (14) et des zones ;
 - bascule en malgache ;
 - absence d'erreur JavaScript et de ressource manquante.
 
-Dernier passage : **51/51**.
+Dernier passage : **72/72**.
+
+Une vérification complémentaire de **50 contrôles** (nouveaux modèles, fond à motif,
+cadrage des photos, suivi de commande, vitrine, recherche et tri du back-office,
+notifications, thème, langue, responsive) a été jouée lors de la dernière campagne :
+**50/50**. Ses anomalies sont documentées en §9.
 
 ```
 PASS  Assistant : orientation paysage prise en compte (42 cm × 29,7 cm) — dimensions inversées
@@ -491,7 +505,7 @@ PASS  Upload : photo servie par /api/files — image/webp — 200
 PASS  Atelier : calque déplacé à la souris et position synchronisée — X 150 → 400
 PASS  Admin : paiement validé
 ...
-51/51 vérifications passées.
+72/72 vérifications passées.
 ```
 
 La protection contre la traversée de chemin a en outre été vérifiée à la main :
@@ -504,7 +518,7 @@ contenu.
 `scripts/e2e.mjs` suit le chemin prévu ; `scripts/probe.mjs` fait l'inverse. Il **attaque**
 l'application pour révéler ce que le parcours nominal ne montre jamais : identifiants
 forgés, valeurs hors bornes, accès croisés entre comptes, codes devinés, fichiers
-malformés. **39 à 41 sondes** selon que Google est configuré ou non sur le serveur testé
+malformés. **40 à 42 sondes** selon que Google est configuré ou non sur le serveur testé
 (la sonde lit la réponse du serveur au lieu de deviner sa configuration) :
 
 | Sonde | Ce qu'elle tente | Résultat attendu |
@@ -532,10 +546,11 @@ malformés. **39 à 41 sondes** selon que Google est configuré ou non sur le se
 | B13 / B14 / B15 | e-mail déjà pris, mot de passe de 5 caractères, mauvais mot de passe | refusés |
 | B16 | accéder à `/admin` en tant que client connecté | redirigé |
 | B17 | soumettre deux fois le formulaire de commande | pas de doublon |
-| B18 / B19 | exporter et enregistrer un canevas vide | aucune erreur, aucune création vide en base |
+| B18 / B18b | un client ouvre l'atelier, puis l'administrateur télécharge | côté client : 0 bouton d'export et message « réservé » ; côté admin : 2 boutons, export exécuté sans erreur |
+| B19 | enregistrer un canevas vide | aucune erreur, aucune création vide en base |
 | B20 | commande invitée puis inscription avec le même e-mail | non rattachée (comportement assumé, voir §10) |
 
-Derniers passages : **39 sondes (sans Google configuré) et 41 sondes (avec), 0 bug,
+Derniers passages : **40 sondes (sans Google configuré) et 42 sondes (avec), 0 bug,
 1 avertissement documenté** dans les deux cas.
 
 ---
@@ -546,7 +561,9 @@ Les anomalies ci-dessous ont été **observées**, pas déduites d'une lecture d
 chacune a d'abord été reproduite par une sonde, puis corrigée, puis la sonde a été
 rejouée. Le détail des allers-retours est donné à la fin de la section. Les anomalies
 1 à 5 datent de la première campagne ; les anomalies 6 à 9 de la campagne « photobooks et
-connexion sociale » (voir la sous-section « Anomalies de la campagne photobooks »).
+connexion sociale » (voir la sous-section « Anomalies de la campagne photobooks ») ; les
+anomalies 10 et 11, la campagne « atelier, vitrine et commande » ; l'anomalie 12, la
+campagne « téléchargement réservé à l'équipe ».
 
 ### Bug n°1 — Un visiteur pouvait s'attribuer la création d'un autre
 
@@ -708,6 +725,98 @@ nettoyage des doublons, en même temps que les e-mails transactionnels (§10).
    remplis et `type()` concaténait la saisie. `scripts/e2e.mjs` a reçu le même helper
    `setField()` que `scripts/probe.mjs`, qui vide le champ avant de saisir.
 
+### Anomalies de la campagne « atelier, vitrine et commande »
+
+Cette campagne a ajouté les nouveaux modèles, l'agrandissement / réduction / ajustement du
+fond à motif, le cadrage des photos dans chaque forme, le suivi de commande côté client,
+les meilleures ventes et le catalogue vitrine, la rubrique « Produit », les champs
+obligatoires de commande, le retrait en boutique grisé, la recherche et le tri du
+back-office, et la notification d'enregistrement. La vérification finale porte sur
+**50 contrôles** (modèles, fond, cadrage, commande, suivi, vitrine, back-office, thème,
+langue, responsive, absence d'erreur JavaScript) : **50/50 au dernier passage**.
+
+#### Bug n°10 — La notification « Modifications enregistrées » restait affichée en permanence
+
+**Gravité : moyenne (ergonomie).** Reproduit : après un enregistrement dans le
+back-office, la notification apparaissait bien, mais 3,2 s plus tard elle était toujours à
+l'écran et l'adresse conservait `?saved=1`.
+
+**Cause racine.** `AdminToast` faisait **tout** dans un unique `useEffect` dépendant de
+`saved` : affichage, nettoyage de l'adresse **et** minuteur de masquage. Le
+`router.replace` qui retire `saved` de l'adresse modifie `saved` → React relance l'effet
+et exécute le nettoyage du précédent : le `window.clearTimeout` annulait le minuteur avant
+qu'il ne se déclenche. Le `if (!saved) return` suivant ne laissait plus rien régler,
+`visible` restait donc `true` jusqu'au rechargement de la page.
+
+**Correctif.** Trois effets séparés : l'un affiche, l'un nettoie l'adresse, un troisième
+(ne dépendant que de `visible`) masque après 2,8 s. Le nettoyage d'adresse ne peut plus
+annuler le minuteur.
+
+**Après correctif :** notification affichée → adresse nettoyée → notification disparue
+seule : les trois contrôles passent.
+
+#### Bug n°11 — Le libellé « numéro de transaction » survivait au passage à « référence de SMS »
+
+**Gravité : faible, mais contradictoire avec la consigne.** Le champ portait déjà
+« Référence de SMS », mais l'aide du bloc Mobile Money (« …saisissez le numéro de
+transaction reçu par SMS ») et l'étape 3 des instructions gardaient l'ancienne
+formulation — en français **et** en malgache.
+
+**Correctif.** Les trois chaînes réécrites dans les deux langues. La vérification
+contrôle désormais que « numéro de transaction » n'apparaît **plus** sur la page de
+commande et que le libellé du champ vaut exactement « Référence de SMS ».
+
+#### Défauts trouvés dans la simulation de cette campagne
+
+1. **L'empreinte du canevas ne regardait qu'un calque.** Konva superpose un canevas par
+   calque (fond, puis objets) : l'empreinte ne prenait que le premier. Tous les contrôles
+   « la photo change-t-elle ? » échouaient alors que le rendu était correct — un faux bug
+   pris au départ pour une régression du cadrage. L'empreinte agrège désormais tous les
+   canevas.
+2. **Un clic sur « Photobook » n'aboutissait pas.** Le libellé existe trois fois dans le
+   catalogue (sommaire, carte produit, navigation) ; le test cliquait sur l'ancre de
+   sommaire, qui ne change pas d'adresse. Ciblage par la carte qui contient un visuel.
+3. **Un formulaire sur deux dans les lignes de zone.** Chaque ligne porte « Enregistrer »
+   **et** « Supprimer », tous deux avec un champ `zoneId` : le test choisissait le premier
+   trouvé — celui de suppression. Ciblage conditionné à la présence du champ de tarif.
+4. **La connexion admin était vérifiée par une condition toujours vraie.**
+   `pathname.startsWith("/")` est vrai sur toutes les pages : un échec de connexion
+   passait inaperçu et se révélait plusieurs étapes plus loin par « formulaire
+   introuvable ». Condition remplacée par « la page n'est plus sur /connexion ».
+5. **Un identifiant d'action serveur périmé pendant une recompilation.** Juste après la
+   modification d'un fichier importé par le formulaire, le HTML servi contenait encore
+   l'ancien identifiant : la soumission partait sans erreur, sans session et sans
+   redirection — un échec **silencieux**, longtemps faussé pour un vrai bug de
+   connexion. Écarté par une requête HTTP brute rejouée à la main (elle rend bien
+   **303 + cookie `mp_session`**), puis par l'attente de la fin de la recompilation.
+   À retenir : ne lancer aucune vérification juste après une modification de fichier.
+6. **Un double `pool.end()`** faisait planter le script en fin d'exécution et masquait le
+   rapport des vérifications.
+
+### Anomalies de la campagne « téléchargement réservé à l'équipe »
+
+#### Bug n°12 — La création d'un client s'ouvrait vierge pour l'administrateur
+
+**Gravité : moyenne.** `getOwnedDesign()` n'acceptait que le propriétaire de la
+création. Or la fiche commande admin propose un lien « 🎨 titre de la création » vers
+`/editeur?design=<id>` : pour un administrateur, la clause d'appartenance ne
+correspondait jamais et l'atelier s'ouvrait sur un **document vierge**, sans aucun
+message. Impossible, dans cet état, de télécharger le fichier à imprimer — le cas
+d'usage de la fonctionnalité. L'anomalie est constatée sur la règle de propriété en
+place (inventée pour le bug n°1), puis le comportement corrigé est vérifié en
+navigateur.
+
+**Correctif.** `DesignOwner.admin` est renseigné depuis le rôle de session : un
+administrateur charge n'importe quelle création, et son enregistrement se pose sur
+l'enregistrement d'origine (`saveDesignAction`) au lieu de créer une copie au nom de
+l'équipe. Aucun autre rôle n'a ce passe-droit ; l'atelier reste réservé aux comptes
+connectés, et l'appartenance des clients entre eux n'a pas bougé (sondes B4 / B5).
+
+**Vérification :** côté client, 0 bouton d'export et la mention « Téléchargement réservé
+à l'atelier d'impression » (sonde B18) ; côté admin, 2 boutons, ouverture de la création
+du client et export en 3508 × 2481 px (A4 à 300 dpi) sans erreur JavaScript (sonde
+B18b + contrôle ciblé 7/7).
+
 ### Bugs non corrigés, assumés et documentés
 
 | Point | Pourquoi il n'est pas corrigé |
@@ -723,6 +832,44 @@ nettoyage des doublons, en même temps que les e-mails transactionnels (§10).
 
 ## 10. Limites connues et suites
 
+### Améliorations proposées, par ordre d'impact
+
+1. **Éditeur de photobook réellement paginé.** L'atelier reste un document d'une page :
+   le nombre de pages choisi (20 minimum, puis 1 000 Ar la page) est affiché et facturé
+   mais pas composable page par page. Une table des pages (duplication, réordonnancement,
+   ajout au cours de la création) et un export PDF multipage seraient la suite la plus
+   utile et la plus directement rentable.
+2. **Export d'impression groupé.** Télécharger les exports 300 dpi d'une commande en une
+   fois (ZIP par commande) plutôt qu'un document à la fois, une fois les volumes réels
+   d'impression connus.
+3. **Export CSV des commandes** (référence, date, client, total, moyen de paiement,
+   statut) pour la comptabilité et le rapprochement des paiements MVola / Orange Money
+   validés à la main.
+4. **Journal d'activités du back-office.** Seul le statut de commande est historisé :
+   étendre `OrderEvent` à un journal générique (qui a modifié quel produit, quel tarif de
+   zone, quel paiement, quand) pour retrouver une valeur modifiée par erreur.
+5. **Recherche et filtres côté produits** dans le back-office, comme pour les commandes,
+   dès que le catalogue sortira du photobook.
+6. **Rappel de suivi plus visible côté client.** L'espace client liste déjà les commandes
+   et leur statut ; ajouter une pastille dans l'en-tête (« 1 commande à vérifier ») et un
+   rappel de l'étape suivante réduirait les relances par téléphone.
+7. **Limitation des tentatives de connexion** et **récupération de mot de passe** — les
+   deux trous documentés du tableau des bugs non corrigés (§9) ; à traiter avant toute
+   mise en production.
+8. **Confort de l'atelier** : annuler / rétablir au clavier, navigation de page aux
+   flèches, repère de focus visible sur tous les contrôles (accessibilité).
+9. **Mise en cache des visuels** (miniatures de modèles, images de produits) et
+   préchargement des modèles voisins dans le sélecteur, pour que l'atelier s'ouvre plus
+   vite sur une connexion malgache.
+
+### Limites à connaître
+
+- **Le téléchargement réservé à l'administration est une règle d'interface.** Le fichier
+  d'impression est rendu par le navigateur à partir du JSON de la création : le bouton
+  n'existe que pour un admin (rôle lu côté serveur à l'affichage de la page), mais un
+  client suffisamment déterminé pourrait reconstruire une image depuis son propre
+  document. Le verrou définitif demanderait un rendu côté serveur (Konva + canvas Node)
+  puis un téléchargement authentifié — prolongement natureux de cette demande.
 - **Les traductions malgaches doivent être relues par un locuteur natif.** Le vocabulaire
   utilisé est courant (Fandraisana, Vokatra, Harona, Tehirizo…) mais une relecture
   professionnelle est nécessaire avant une mise en production.

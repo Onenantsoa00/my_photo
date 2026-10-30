@@ -12,6 +12,7 @@ import {
   ImagePlus,
   Layers,
   LayoutTemplate,
+  Lock,
   Plus,
   Redo2,
   Save,
@@ -95,6 +96,12 @@ export type EditorShellProps = {
   /** Message affiché à l'ouverture (par exemple un modèle appliqué). */
   initialNoticeKey?: TranslationKey | null;
   initialDesignId: string | null;
+  /**
+   * Le fichier d'impression se télécharge depuis l'atelier : le bouton est
+   * réservé à l'équipe (admin). Le client commande depuis le panier, l'équipe
+   * télécharge le fichier et fabrique le livre.
+   */
+  canExport: boolean;
   context: EditorContext;
   variants: {
     id: string;
@@ -125,6 +132,7 @@ export function EditorShell({
   initialTitle,
   initialNoticeKey = null,
   initialDesignId,
+  canExport,
   context,
   variants,
 }: EditorShellProps) {
@@ -643,20 +651,32 @@ export function EditorShell({
           </span>
 
           <div className="ml-auto flex items-center gap-1">
-            <button
-              type="button"
-              className="btn-outline btn-sm inline-flex items-center gap-1"
-              onClick={() => exportFile("png")}
-            >
-              <Download className="h-3.5 w-3.5" /> PNG
-            </button>
-            <button
-              type="button"
-              className="btn-outline btn-sm inline-flex items-center gap-1"
-              onClick={() => exportFile("jpg")}
-            >
-              <Download className="h-3.5 w-3.5" /> JPG
-            </button>
+            {canExport ? (
+              <>
+                <button
+                  type="button"
+                  className="btn-outline btn-sm inline-flex items-center gap-1"
+                  onClick={() => exportFile("png")}
+                >
+                  <Download className="h-3.5 w-3.5" /> PNG
+                </button>
+                <button
+                  type="button"
+                  className="btn-outline btn-sm inline-flex items-center gap-1"
+                  onClick={() => exportFile("jpg")}
+                >
+                  <Download className="h-3.5 w-3.5" /> JPG
+                </button>
+              </>
+            ) : (
+              <span
+                className="inline-flex items-center gap-1.5 rounded-full bg-sand-100 px-2.5 py-1 text-[11px] font-semibold text-ink-500"
+                title={t("editor.exportReserved")}
+              >
+                <Lock className="h-3 w-3" />
+                {t("editor.exportReserved")}
+              </span>
+            )}
           </div>
         </div>
       </header>
@@ -873,7 +893,12 @@ export function EditorShell({
                         ? "border-brand-600 ring-2 ring-brand-500/20"
                         : "border-sand-300"
                     }`}
-                    style={{ background: backgroundToCss(item.background) }}
+                    style={{
+                      background: backgroundToCss(
+                        item.background,
+                        72 / Math.max(1, document.canvas.width),
+                      ),
+                    }}
                   >
                     <span className="absolute inset-x-0 bottom-0 bg-card/90 py-0.5 text-[10px] font-bold text-ink-700">
                       {index + 1}

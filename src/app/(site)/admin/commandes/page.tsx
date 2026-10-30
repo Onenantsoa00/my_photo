@@ -2,8 +2,9 @@ import type { Metadata } from "next";
 import Link from "next/link";
 
 import { StatusBadge } from "@/components/status-badge";
+import type { Prisma } from "@/generated/prisma/client";
 import { formatDateTime, formatMga } from "@/lib/format";
-import { translate } from "@/lib/i18n";
+import { translate, type TranslationKey } from "@/lib/i18n";
 import { getLocale } from "@/lib/locale.server";
 import { PAYMENT_METHOD_LABEL_KEY, type PaymentMethodValue } from "@/lib/payment";
 import { prisma } from "@/lib/prisma";
@@ -22,38 +23,86 @@ const FILTERS = [
   { value: "CANCELLED", label: "Annulées" },
 ] as const;
 
+/** Tris proposés, du plus utile au plus rare. */
+const SORTS: {
+  value: string;
+  key: TranslationKey;
+  orderBy: Prisma.OrderOrderByWithRelationInput;
+}[] = [
+  { value: "recent", key: "admin.sortRecent", orderBy: { createdAt: "desc" } },
+  { value: "oldest", key: "admin.sortOldest", orderBy: { createdAt: "asc" } },
+  { value: "total-desc", key: "admin.sortTotalDesc", orderBy: { totalMga: "desc" } },
+  { value: "total-asc", key: "admin.sortTotalAsc", orderBy: { totalMga: "asc" } },
+];
+
 export default async function AdminOrdersPage({
   searchParams,
 }: {
-  searchParams: Promise<{ filtre?: string }>;
+  searchParams: Promise<{ filtre?: string; q?: string; tri?: string }>;
 }) {
-  const { filtre } = await searchParams;
+  const { filtre, q, tri } = await searchParams;
   const locale = await getLocale();
-  const t = (key: Parameters<typeof translate>[1]) => translate(locale, key);
+  const t = (key: TranslationKey, replacements?: Record<string, string | number>) =>
+    translate(locale, key, replacements);
 
   const active = FILTERS.some((filter) => filter.value === filtre) ? filtre : "all";
+  const search = (q ?? "").trim();
+  const sort = SORTS.find((option) => option.value === tri) ?? SORTS[0];
+
+  // Recherche libre : client, référence, téléphone, e-mail ou zone de
+  // livraison. Les valeurs viennent d'un formulaire GET, jamais du HTML brut.
+  const where: Prisma.OrderWhereInput = {
+    ...(active === "all"
+      ? {}
+      : active === "AWAITING_VERIFICATION"
+        ? { paymentStatus: "AWAITING_VERIFICATION" }
+        : { status: active as "PENDING" }),
+    ...(search
+      ? {
+          OR: [
+            { reference: { contains: search, mode: "insensitive" } },
+            { customerName: { contains: search, mode: "insensitive" } },
+            { customerPhone: { contains: search } },
+            { customerEmail: { contains: search, mode: "insensitive" } },
+            { deliveryZoneLabel: { contains: search, mode: "insensitive" } },
+            { city: { contains: search, mode: "insensitive" } },
+            { region: { contains: search, mode: "insensitive" } },
+          ],
+        }
+      : {}),
+  };
 
   const orders = await prisma.order.findMany({
-    where:
-      active === "all"
-        ? {}
-        : active === "AWAITING_VERIFICATION"
-          ? { paymentStatus: "AWAITING_VERIFICATION" }
-          : { status: active as "PENDING" },
-    orderBy: { createdAt: "desc" },
+    where,
+    orderBy: sort.orderBy,
     take: 100,
     include: { _count: { select: { items: true } } },
   });
 
+  const filterHref = (value: string) => {
+    const params = new URLSearchParams();
+    if (value !== "all") params.set("filtre", value);
+    if (search) params.set("q", search);
+    if (sort.value !== "recent") params.set("tri", sort.value);
+
+    const query = params.toString();
+    return query ? `/admin/commandes?${query}` : "/admin/commandes";
+  };
+
   return (
     <div>
-      <h1 className="section-title">{t("admin.orders")}</h1>
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <h1 className="section-title">{t("admin.orders")}</h1>
+        <span className="badge-neutral">
+          {t("admin.searchResults", { count: orders.length })}
+        </span>
+      </div>
 
       <nav className="mt-4 flex flex-wrap gap-2">
         {FILTERS.map((filter) => (
           <Link
             key={filter.value}
-            href={filter.value === "all" ? "/admin/commandes" : `/admin/commandes?filtre=${filter.value}`}
+            href={filterHref(filter.value)}
             className={
               active === filter.value
                 ? "badge-brand"
@@ -65,8 +114,51 @@ export default async function AdminOrdersPage({
         ))}
       </nav>
 
+      {/* Recherche (client, référence, livraison) et tri du total. */}
+      <form
+        action="/admin/commandes"
+        method="get"
+        className="card mt-4 flex flex-wrap items-end gap-3 p-4"
+      >
+        {active !== "all" ? <input type="hidden" name="filtre" value={active} /> : null}
+
+        <label className="min-w-56 flex-1">
+          <span className="label text-[11px]">{t("admin.search")}</span>
+          <input
+            type="search"
+            name="q"
+            defaultValue={search}
+            placeholder={t("admin.searchPlaceholder")}
+            className="input"
+          />
+        </label>
+
+        <label className="min-w-44">
+          <span className="label text-[11px]">{t("admin.sort")}</span>
+          <select name="tri" defaultValue={sort.value} className="input">
+            {SORTS.map((option) => (
+              <option key={option.value} value={option.value}>
+                {t(option.key)}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <button type="submit" className="btn-primary btn-sm">
+          {t("admin.search")}
+        </button>
+
+        {search || sort.value !== "recent" ? (
+          <Link href={filterHref("all")} className="btn-ghost btn-sm">
+            {t("common.cancel")}
+          </Link>
+        ) : null}
+      </form>
+
       {orders.length === 0 ? (
-        <p className="muted mt-6">{t("admin.noOrders")}</p>
+        <p className="muted mt-6">
+          {search ? t("admin.noResults") : t("admin.noOrders")}
+        </p>
       ) : (
         <div className="card mt-4 overflow-x-auto">
           <table className="w-full min-w-[52rem] text-sm">
@@ -97,6 +189,9 @@ export default async function AdminOrdersPage({
                   <td className="px-4 py-3">
                     <p className="font-medium">{order.customerName}</p>
                     <p className="muted text-xs">{order.customerPhone}</p>
+                    {order.deliveryZoneLabel ? (
+                      <p className="muted text-[11px]">{order.deliveryZoneLabel}</p>
+                    ) : null}
                   </td>
                   <td className="px-4 py-3">
                     <p>{t(PAYMENT_METHOD_LABEL_KEY[order.paymentMethod as PaymentMethodValue])}</p>

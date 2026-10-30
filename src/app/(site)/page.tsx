@@ -12,10 +12,12 @@ import {
   Smartphone,
   Sparkles,
   Star,
+  TrendingUp,
   Truck,
 } from "lucide-react";
 import Link from "next/link";
 
+import { ProductCard } from "@/components/product-card";
 import { TemplatePreview } from "@/components/editor/template-preview";
 import { FadeIn, Reveal } from "@/components/motion/reveal";
 import { PriceTeaser } from "@/components/photobook/price-teaser";
@@ -41,7 +43,12 @@ import {
 } from "@/lib/photobook";
 import { PAYMENT_ACCOUNTS, PAYMENT_ACCOUNT_NAME } from "@/lib/payment";
 import { prisma } from "@/lib/prisma";
-import { getProductBySlug } from "@/server/catalog";
+import {
+  getProductBySlug,
+  listFeaturedProducts,
+  listProducts,
+  listTopSellingProducts,
+} from "@/server/catalog";
 
 /** Modèles mis en avant dans la vitrine d'accueil. */
 const SHOWCASE_TEMPLATE_IDS = [
@@ -99,6 +106,17 @@ export default async function HomePage() {
       },
     }),
   ]);
+
+  // Le catalogue complet, puis les meilleures ventes réelles (avec les
+  // produits mis en avant en secours tant qu'aucune commande n'existe).
+  const [products, topSales] = await Promise.all([
+    listProducts(),
+    listTopSellingProducts(3),
+  ]);
+  const topProducts =
+    topSales.length > 0
+      ? topSales.map((row) => row.product)
+      : await listFeaturedProducts(3);
 
   const heroCover = findTemplate("pb-luxe-couverture")?.build();
   const heroSecondary = HERO_SECONDARY_IDS.map((id) => findTemplate(id)).filter(
@@ -284,6 +302,69 @@ export default async function HomePage() {
         </div>
       </section>
 
+      {/* ------------------------------------------- Produits & meilleures ventes */}
+      <section className="container-page py-14 sm:py-16">
+        <div className="flex flex-wrap items-end justify-between gap-4">
+          <Reveal className="max-w-2xl">
+            <span className="text-[11px] font-bold uppercase tracking-[0.2em] text-brand-600">
+              {t("home.productsEyebrow")}
+            </span>
+            <h2 className="section-title mt-2 text-3xl sm:text-4xl">
+              {t("home.productsTitle")}
+            </h2>
+            <p className="muted mt-3 text-base leading-relaxed">
+              {t("home.productsSubtitle")}
+            </p>
+          </Reveal>
+          <Link
+            href="/produits"
+            className="inline-flex items-center gap-1.5 text-sm font-bold text-brand-700 hover:underline dark:text-brand-300"
+          >
+            {t("products.title")} <ArrowRight className="h-4 w-4" />
+          </Link>
+        </div>
+
+        {topProducts.length > 0 ? (
+          <div className="mt-8">
+            <h3 className="flex items-center gap-2 text-xs font-bold uppercase tracking-wide text-ink-500">
+              <TrendingUp className="h-4 w-4 text-brand-600" /> {t("home.topSalesEyebrow")}
+            </h3>
+
+            <div className="mt-4 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+              {topProducts.map((product, index) => (
+                <Reveal key={product.id} delay={index * 0.05}>
+                  <div className="relative">
+                    <span className="absolute -top-2 left-3 z-10 rounded-full bg-accent-600 px-2.5 py-0.5 text-[10px] font-black uppercase tracking-wide text-white shadow-md">
+                      {t("home.topSalesBadge", { rank: index + 1 })}
+                    </span>
+                    <ProductCard product={product} locale={locale} />
+                  </div>
+                </Reveal>
+              ))}
+            </div>
+
+            <p className="muted mt-3 text-xs">{t("home.topSalesSubtitle")}</p>
+          </div>
+        ) : null}
+
+        {products.length > 0 ? (
+          <div className="mt-12">
+            <h3 className="flex flex-wrap items-baseline gap-2 text-xs font-bold uppercase tracking-wide text-ink-500">
+              {t("products.title")}
+              <span className="text-[11px] font-semibold normal-case text-ink-500">
+                {t("products.types")}
+              </span>
+            </h3>
+
+            <div className="mt-4 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+              {products.map((product) => (
+                <ProductCard key={product.id} product={product} locale={locale} />
+              ))}
+            </div>
+          </div>
+        ) : null}
+      </section>
+
       {/* ------------------------------------------------------- Vitrine photos */}
       <section className="border-b border-sand-200 bg-sand-50/70 py-16 sm:py-20 dark:bg-sand-100/40">
         <div className="container-page">
@@ -429,7 +510,7 @@ export default async function HomePage() {
                 <div key={motif.key} className="card p-2">
                   <div
                     className="h-16 rounded-lg ring-1 ring-sand-300"
-                    style={{ background: backgroundToCss(motif.background) }}
+                    style={{ background: backgroundToCss(motif.background, 0.5) }}
                     aria-hidden
                   />
                   <p className="mt-1.5 text-center text-[11px] font-semibold">

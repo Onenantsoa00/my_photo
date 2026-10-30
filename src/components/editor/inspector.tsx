@@ -5,6 +5,7 @@ import { FONT_STACKS } from "@/lib/editor/templates";
 import type {
   ImageCrop,
   ImageFilters,
+  ImageFit,
   ImageLayer,
   Layer,
   ShapeKind,
@@ -40,6 +41,17 @@ const CROP_GLYPH: Record<ImageCrop, string> = {
   heart: "♥",
   star: "★",
   diamond: "◆",
+};
+
+const IMAGE_FITS: ImageFit[] = ["cover", "contain", "stretch"];
+
+const FIT_LABEL_KEY: Record<
+  ImageFit,
+  "editor.fitCover" | "editor.fitContain" | "editor.fitStretch"
+> = {
+  cover: "editor.fitCover",
+  contain: "editor.fitContain",
+  stretch: "editor.fitStretch",
 };
 
 const CROP_LABEL_KEY: Record<ImageCrop, `editor.crop.${ImageCrop}`> = {
@@ -479,6 +491,76 @@ function ImageSection({
           ))}
         </div>
       </div>
+
+      {layer.src ? (
+        <Group title={t("editor.imageFit")}>
+          <p className="text-[11px] leading-snug text-ink-500">{t("editor.imageFitHint")}</p>
+
+          <div className="grid grid-cols-3 gap-1">
+            {IMAGE_FITS.map((fit) => (
+              <button
+                key={fit}
+                type="button"
+                aria-pressed={layer.fit === fit}
+                onClick={() =>
+                  onPatch(layer.id, { fit, offsetX: 0, offsetY: 0 })
+                }
+                className={
+                  layer.fit === fit
+                    ? "rounded-lg bg-brand-600 px-2 py-1.5 text-[11px] font-bold text-white"
+                    : "rounded-lg border border-sand-300 bg-card px-2 py-1.5 text-[11px] font-semibold text-ink-700 hover:border-brand-400"
+                }
+              >
+                {t(FIT_LABEL_KEY[fit])}
+              </button>
+            ))}
+          </div>
+
+          <SliderField
+            label={t("editor.zoom")}
+            value={layer.zoom}
+            min={0.5}
+            max={3}
+            step={0.02}
+            display={`×${layer.zoom.toFixed(2)}`}
+            onLiveChange={(value) => live({ zoom: value })}
+            onGestureStart={onGestureStart}
+            onGestureEnd={onGestureEnd}
+          />
+
+          <SliderField
+            label={t("editor.positionX")}
+            value={layer.offsetX}
+            min={-Math.round(layer.width / 2)}
+            max={Math.round(layer.width / 2)}
+            step={1}
+            display={`${Math.round(layer.offsetX)} px`}
+            onLiveChange={(value) => live({ offsetX: value })}
+            onGestureStart={onGestureStart}
+            onGestureEnd={onGestureEnd}
+          />
+
+          <SliderField
+            label={t("editor.positionY")}
+            value={layer.offsetY}
+            min={-Math.round(layer.height / 2)}
+            max={Math.round(layer.height / 2)}
+            step={1}
+            display={`${Math.round(layer.offsetY)} px`}
+            onLiveChange={(value) => live({ offsetY: value })}
+            onGestureStart={onGestureStart}
+            onGestureEnd={onGestureEnd}
+          />
+
+          <button
+            type="button"
+            onClick={() => onPatch(layer.id, { offsetX: 0, offsetY: 0, zoom: 1 })}
+            className="btn-outline w-full py-1.5 text-xs"
+          >
+            {t("editor.center")}
+          </button>
+        </Group>
+      ) : null}
 
       {layer.crop === "none" || layer.crop === "rounded" ? (
         <SliderField

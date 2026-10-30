@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 
+import { AdminToast } from "@/components/admin/admin-toast";
 import { translate } from "@/lib/i18n";
 import { getLocale } from "@/lib/locale.server";
 import { getSessionUser } from "@/server/auth";
@@ -39,6 +40,8 @@ export default async function AdminLayout({
       </nav>
 
       <div className="mt-6">{children}</div>
+
+      <AdminToast />
     </div>
   );
 }

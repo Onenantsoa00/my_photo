@@ -13,7 +13,7 @@ type ProductCardProduct = {
   descriptionMg: string | null;
   imageUrl: string | null;
   images?: { url: string }[];
-  variants: { priceMga: number }[];
+  variants: { priceMga: number; label?: string }[];
   category: { slug: string; nameFr: string; nameMg: string };
 };
 
@@ -26,6 +26,12 @@ export function ProductCard({
 }) {
   const name = productName(product, locale);
   const from = lowestPrice(product.variants);
+  // Les formats disponibles (A4, A5, A6, carré…) : c'est ce que le client
+  // choisit juste après, sur la fiche du produit.
+  const formats = product.variants
+    .map((variant) => variant.label)
+    .filter((label): label is string => Boolean(label))
+    .slice(0, 6);
 
   return (
     <Link
@@ -52,6 +58,19 @@ export function ProductCard({
             ? (product.descriptionMg ?? product.descriptionFr)
             : product.descriptionFr}
         </p>
+
+        {formats.length > 1 ? (
+          <ul className="mt-3 flex flex-wrap gap-1">
+            {formats.map((format) => (
+              <li
+                key={format}
+                className="rounded-full bg-sand-100 px-2 py-0.5 text-[10px] font-semibold text-ink-700 dark:bg-sand-200/60"
+              >
+                {format}
+              </li>
+            ))}
+          </ul>
+        ) : null}
 
         <div className="mt-4 flex items-end justify-between border-t border-sand-200 pt-3">
           <div>

@@ -20,14 +20,15 @@ import {
   patternTile,
   type PageBackground,
 } from "@/lib/editor/background";
-import type {
-  EditorPage,
-  ImageCrop,
-  ImageFilters,
-  ImageLayer,
-  Layer as LayerModel,
-  ShapeLayer,
-  TextLayer,
+import {
+  imageLayout,
+  type EditorPage,
+  type ImageCrop,
+  type ImageFilters,
+  type ImageLayer,
+  type Layer as LayerModel,
+  type ShapeLayer,
+  type TextLayer,
 } from "@/lib/editor/types";
 
 // ---------------------------------------------------------------------------
@@ -175,7 +176,11 @@ function BackgroundNode({
             // react-konva ne déclarent que HTMLImageElement.
             fillPatternImage={tile as unknown as HTMLImageElement}
             fillPatternRepeat="repeat"
-            fillPatternOffset={{ x: 0, y: 0 }}
+            // Même décalage que la vignette DOM : le motif s'ajuste à la page.
+            fillPatternOffset={{
+              x: (background.offsetX ?? 0) % Math.max(8, background.size),
+              y: (background.offsetY ?? 0) % Math.max(8, background.size),
+            }}
           />
         ) : null}
       </>
@@ -364,22 +369,29 @@ function ImageNode({
     );
   }
 
-  const imageNode = (
-    <KonvaImage
-      ref={nodeRef}
-      image={image}
-      width={layer.width}
-      height={layer.height}
-      cornerRadius={masked ? 0 : layer.cornerRadius}
-      filters={IMAGE_FILTER_LIST}
-      brightness={filters.brightness}
-      contrast={filters.contrast}
-      saturation={filters.saturation}
-      blurRadius={filters.blur}
-      grayscale={filters.grayscale ? "grayscale" : undefined}
-      sepia={filters.sepia ? "sepia" : undefined}
-    />
-  );
+  // Cadrage choisi par le client : la fenêtre source est calculée pour que le
+  // nœud garde exactement la taille du cadre (aucun débordement de la forme).
+  const layout = imageLayout(layer, {
+    width: image.naturalWidth || image.width || layer.width,
+    height: image.naturalHeight || image.height || layer.height,
+  });
+
+  const imageProps = {
+    ref: nodeRef,
+    image,
+    x: layout.node.x,
+    y: layout.node.y,
+    width: layout.node.width,
+    height: layout.node.height,
+    crop: layout.source,
+    filters: IMAGE_FILTER_LIST,
+    brightness: filters.brightness,
+    contrast: filters.contrast,
+    saturation: filters.saturation,
+    blurRadius: filters.blur,
+    grayscale: filters.grayscale ? "grayscale" : undefined,
+    sepia: filters.sepia ? "sepia" : undefined,
+  } as const;
 
   if (masked) {
     return (
@@ -389,12 +401,12 @@ function ImageNode({
           drawCrop(ctx, layer.width, layer.height, layer.crop)
         }
       >
-        {imageNode}
+        <KonvaImage {...imageProps} cornerRadius={0} />
       </Group>
     );
   }
 
-  return <KonvaImage {...shared} ref={nodeRef} image={image} width={layer.width} height={layer.height} cornerRadius={layer.cornerRadius} filters={IMAGE_FILTER_LIST} brightness={filters.brightness} contrast={filters.contrast} saturation={filters.saturation} blurRadius={filters.blur} grayscale={filters.grayscale ? "grayscale" : undefined} sepia={filters.sepia ? "sepia" : undefined} />;
+  return <KonvaImage {...shared} {...imageProps} cornerRadius={layer.cornerRadius} />;
 }
 
 function ShapeNode({

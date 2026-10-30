@@ -288,7 +288,10 @@ export default async function OrderPage({ params }: PageProps) {
               </dl>
             </div>
 
-            <Link href="/compte" className="btn-outline w-full">
+            <Link href={`/suivi?ref=${order.reference}`} className="btn-outline w-full">
+              {t("nav.tracking")}
+            </Link>
+            <Link href="/compte" className="btn-ghost w-full">
               {t("order.seeOrders")}
             </Link>
             <Link href="/produits" className="btn-ghost w-full">

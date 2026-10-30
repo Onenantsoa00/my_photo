@@ -12,7 +12,12 @@ import {
   PHOTOBOOK_MIN_PAGES,
 } from "@/lib/photobook";
 import { formatMga } from "@/lib/format";
-import { categoryName, listCategories, listProducts } from "@/server/catalog";
+import {
+  categoryDescription,
+  categoryName,
+  listCategories,
+  listProducts,
+} from "@/server/catalog";
 
 export const metadata: Metadata = {
   title: "Le photobook",
@@ -23,6 +28,18 @@ export default async function ProductsPage() {
   const t = (key: Parameters<typeof translate>[1]) => translate(locale, key);
 
   const [categories, products] = await Promise.all([listCategories(), listProducts()]);
+
+  // Chaque type de produit a sa propre section : la boutique peut grandir sans
+  // que le client ait à filtrer une liste indifférenciée.
+  const groups = categories
+    .map((category) => ({
+      category,
+      items: products.filter((product) => product.category.slug === category.slug),
+    }))
+    .filter((group) => group.items.length > 0);
+
+  const knownSlugs = new Set(categories.map((category) => category.slug));
+  const others = products.filter((product) => !knownSlugs.has(product.category.slug));
 
   return (
     <div>
@@ -81,12 +98,14 @@ export default async function ProductsPage() {
 
       <section className="container-page py-12">
         {categories.length > 0 ? (
-          <nav className="flex flex-wrap gap-2">
-            <span className="badge-brand">{t("products.all")}</span>
+          <nav className="flex flex-wrap items-center gap-2">
+            <span className="text-[11px] font-bold uppercase tracking-wide text-ink-500">
+              {t("products.types")}
+            </span>
             {categories.map((category) => (
               <Link
                 key={category.id}
-                href={`/produits/${category.slug}`}
+                href={`#${category.slug}`}
                 className="badge-neutral hover:bg-brand-50 hover:text-brand-800"
               >
                 {categoryName(category, locale)}
@@ -99,10 +118,50 @@ export default async function ProductsPage() {
         {products.length === 0 ? (
           <p className="muted mt-10">{t("products.empty")}</p>
         ) : (
-          <div className="mt-8 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
-            {products.map((product) => (
-              <ProductCard key={product.id} product={product} locale={locale} />
+          <div className="mt-8 space-y-14">
+            {groups.map((group) => (
+              <section
+                key={group.category.id}
+                id={group.category.slug}
+                className="scroll-mt-24"
+              >
+                <div className="flex flex-wrap items-end justify-between gap-3 border-b border-sand-200 pb-3">
+                  <div>
+                    <h2 className="text-xl font-black tracking-tight sm:text-2xl">
+                      {categoryName(group.category, locale)}
+                    </h2>
+                    <p className="muted mt-1 max-w-2xl text-sm leading-relaxed">
+                      {categoryDescription(group.category, locale)}
+                    </p>
+                  </div>
+                  <span className="badge-neutral">
+                    {group.items.length} {t("nav.photobooks").toLowerCase()}
+                  </span>
+                </div>
+
+                <div className="mt-5 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+                  {group.items.map((product) => (
+                    <ProductCard key={product.id} product={product} locale={locale} />
+                  ))}
+                </div>
+              </section>
             ))}
+
+            {others.length > 0 ? (
+              <section id="autres" className="scroll-mt-24">
+                <div className="border-b border-sand-200 pb-3">
+                  <h2 className="text-xl font-black tracking-tight sm:text-2xl">
+                    {t("products.all")}
+                  </h2>
+                </div>
+
+                <div className="mt-5 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+                  {others.map((product) => (
+                    <ProductCard key={product.id} product={product} locale={locale} />
+                  ))}
+                </div>
+              </section>
+            ) : null}
           </div>
         )}
       </section>

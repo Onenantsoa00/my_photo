@@ -165,6 +165,9 @@ export default async function EditorPage({
       initialTitle={initialTitle}
       initialNoticeKey={initialNoticeKey}
       initialDesignId={design?.id ?? null}
+      // Le fichier d'impression ne se télécharge que côté équipe : le client
+      // commande depuis l'atelier, l'administrateur télécharge et imprime.
+      canExport={user.role === "ADMIN"}
       context={context}
       variants={
         product?.variants.map((variant) => ({

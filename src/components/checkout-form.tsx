@@ -108,6 +108,7 @@ export function CheckoutForm({
         {/* ------------------------------------------------------- Coordonnées */}
         <section className="card p-5">
           <h2 className="font-bold">{t("checkout.contact")}</h2>
+          <p className="muted mt-1 text-xs leading-relaxed">{t("checkout.requiredHint")}</p>
 
           <div className="mt-4 grid gap-4 sm:grid-cols-2">
             <div className="sm:col-span-2">
@@ -126,14 +127,13 @@ export function CheckoutForm({
 
             <div>
               <label className="label" htmlFor="customerEmail">
-                {t("checkout.email")}
+                {t("checkout.email")} ({t("common.optional")})
               </label>
               <input
                 id="customerEmail"
                 name="customerEmail"
                 type="email"
                 className="input"
-                required
                 defaultValue={defaults.customerEmail}
               />
               <FieldError code={state.fieldErrors?.customerEmail} />
@@ -163,16 +163,30 @@ export function CheckoutForm({
           <div className="mt-4 space-y-2">
             {(
               [
-                { value: "HOME_DELIVERY" as const, label: t("checkout.homeDelivery") },
-                { value: "PICKUP" as const, label: t("checkout.pickup") },
+                {
+                  value: "HOME_DELIVERY" as const,
+                  label: t("checkout.homeDelivery"),
+                  // Aucun point de vente ouvert pour le moment : le retrait
+                  // reste visible mais grisé, sans promettre l'impossible.
+                  disabled: false,
+                  note: null as string | null,
+                },
+                {
+                  value: "PICKUP" as const,
+                  label: t("checkout.pickup"),
+                  disabled: true,
+                  note: t("checkout.pickupUnavailable"),
+                },
               ]
             ).map((option) => (
               <label
                 key={option.value}
                 className={
-                  deliveryMode === option.value
-                    ? "flex cursor-pointer items-center gap-3 rounded-xl border-2 border-brand-600 bg-brand-50 px-4 py-3"
-                    : "flex cursor-pointer items-center gap-3 rounded-xl border border-sand-300 px-4 py-3 hover:border-brand-300"
+                  option.disabled
+                    ? "flex cursor-not-allowed items-start gap-3 rounded-xl border border-dashed border-sand-300 bg-sand-100/70 px-4 py-3 opacity-70 dark:bg-sand-200/40"
+                    : deliveryMode === option.value
+                      ? "flex cursor-pointer items-center gap-3 rounded-xl border-2 border-brand-600 bg-brand-50 px-4 py-3"
+                      : "flex cursor-pointer items-center gap-3 rounded-xl border border-sand-300 px-4 py-3 hover:border-brand-300"
                 }
               >
                 <input
@@ -180,13 +194,27 @@ export function CheckoutForm({
                   name="deliveryMode"
                   value={option.value}
                   checked={deliveryMode === option.value}
+                  disabled={option.disabled}
                   onChange={() => setDeliveryMode(option.value)}
-                  className="h-4 w-4 accent-brand-600"
+                  className="mt-0.5 h-4 w-4 accent-brand-600"
                 />
-                <span className="text-sm font-semibold">{option.label}</span>
+                <span className="min-w-0">
+                  <span className="block text-sm font-semibold">{option.label}</span>
+                  {option.note ? (
+                    <span className="muted mt-0.5 block text-[11px] leading-snug">
+                      {option.note}
+                    </span>
+                  ) : null}
+                </span>
               </label>
             ))}
           </div>
+
+          {state.fieldErrors?.deliveryMode ? (
+            <p className="mt-2 text-xs font-semibold text-accent-600">
+              {t("checkout.pickupUnavailable")}
+            </p>
+          ) : null}
 
           {deliveryMode === "HOME_DELIVERY" ? (
             <div className="mt-4 grid gap-4 sm:grid-cols-2">
@@ -198,6 +226,7 @@ export function CheckoutForm({
                   id="deliveryZoneId"
                   name="deliveryZoneId"
                   className="input"
+                  required
                   value={zoneId}
                   onChange={(event) => setZoneId(event.target.value)}
                 >
@@ -219,6 +248,7 @@ export function CheckoutForm({
                   id="addressLine"
                   name="addressLine"
                   className="input min-h-20"
+                  required
                   placeholder={t("checkout.addressHint")}
                 />
                 <FieldError code={state.fieldErrors?.addressLine} />

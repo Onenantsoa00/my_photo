@@ -62,6 +62,47 @@ async function setProbeProductActive(isActive) {
   ]);
 }
 
+/**
+ * Produit de contrôle des sondes B2 à B20.
+ *
+ * Le seed ne crée que le photobook, dont l'atelier gère le panier lui-même :
+ * les sondes ont besoin d'un produit « classique » (panneau d'achat avec format,
+ * quantité, bouton « Ajouter au panier »). Il est créé **inactif** au premier
+ * lancement sur une base fraîche, puis activé le temps des sondes et remis
+ * inactif — jamais visible dans le catalogue.
+ */
+async function ensureProbeProduct() {
+  const existing = await sql('select id from "Product" where slug = $1', [PROBE_PRODUCT_SLUG]);
+  if (existing.length > 0) return;
+
+  const categories = await sql('select id from "Category" order by "createdAt" asc limit 1');
+  if (categories.length === 0) {
+    throw new Error("Aucune catégorie en base : lancez d'abord `npm run db:seed`.");
+  }
+
+  const productId = `probe-product-${Date.now()}`;
+  await sql(
+    `insert into "Product" (id, slug, "categoryId", "nameFr", "nameMg", "descriptionFr",
+       "descriptionMg", "basePriceMga", "leadTimeDays", "isActive", "isFeatured",
+       "sortOrder", "createdAt", "updatedAt")
+     values ($1, $2, $3, $4, $4, $5, $5, $6, 2, false, false, 0, now(), now())`,
+    [
+      productId,
+      PROBE_PRODUCT_SLUG,
+      categories[0].id,
+      "Tirage standard 10 × 15 cm",
+      "Produit de contrôle des sondes de robustesse, jamais affiché dans le catalogue.",
+      800,
+    ],
+  );
+  await sql(
+    `insert into "ProductVariant" (id, "productId", sku, label, "widthMm", "heightMm",
+       "pageCount", "priceMga", "isDefault", "isActive", "sortOrder")
+     values ($1, $2, $3, $4, 100, 150, 1, 800, true, true, 0)`,
+    [`probe-variant-${Date.now()}`, productId, "tirage-10x15", "10 × 15 cm"],
+  );
+}
+
 async function clickByText(page, text, selector = "button, a") {
   const clicked = await page.evaluate(
     (needle, sel) => {
@@ -114,9 +155,10 @@ async function fillCheckout(page, { method, delivery = "HOME_DELIVERY", referenc
     const zoneValue = await page.$eval("#deliveryZoneId option:nth-child(2)", (o) => o.value);
     await page.select("#deliveryZoneId", zoneValue);
     await setField(page, "#addressLine", "Lot 12 Ambatoroka");
-  } else {
-    await page.click('input[value="PICKUP"]');
   }
+  // Le retrait en boutique est désactivé (aucun point de vente) : la sonde B8
+  // force le champ elle-même pour vérifier que le serveur refuse.
+  void delivery;
 
   await page.click(`input[value="${method}"]`);
   if (reference) {
@@ -468,6 +510,7 @@ async function signedInPage(browser, email, password) {
 }
 
 async function browserProbes(browser) {
+  await ensureProbeProduct();
   await setProbeProductActive(true);
   try {
     await runBrowserProbes(browser);
@@ -704,23 +747,41 @@ async function runBrowserProbes(browser) {
   );
   await admin.context.close();
 
-  // B8 — retrait en boutique : frais de port nuls
+  // B8 — retrait en boutique : grisé tant qu'aucun point de vente n'existe,
+  //      et refusé par le serveur même si le client force le champ.
   await page.goto(`${BASE}/produits/tirage-standard`, { waitUntil: "networkidle2" });
   await clickByText(page, "Ajouter au panier");
   await new Promise((resolve) => setTimeout(resolve, 2500));
   await page.goto(`${BASE}/commande`, { waitUntil: "networkidle2" });
-  await fillCheckout(page, { method: "MVOLA", delivery: "PICKUP", reference: PROBE_TRANSACTION_REF });
-  const pickupReference = await submitOrder(page);
-  const pickupRow = await sql(
-    'select "deliveryFeeMga", "deliveryMode", "subtotalMga", "totalMga", "addressLine" from "Order" where reference = $1',
-    [pickupReference],
+
+  const pickupText = await page.evaluate(() => document.body.innerText);
+  const pickupDisabled = await page.$eval('input[value="PICKUP"]', (input) => input.disabled);
+  const pickupNoted = pickupText.includes("Bientôt disponible");
+
+  const ordersBefore8 = await sql('select count(*)::int as n from "Order"');
+  await fillCheckout(page, { method: "MVOLA", reference: PROBE_TRANSACTION_REF });
+  await page.$eval('input[value="PICKUP"]', (input) => {
+    input.disabled = false;
+    input.checked = true;
+    input.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+  await clickByText(page, "Confirmer la commande");
+  await new Promise((resolve) => setTimeout(resolve, 4000));
+
+  const ordersAfter8 = await sql('select count(*)::int as n from "Order"');
+  const refused8 =
+    ordersBefore8[0].n === ordersAfter8[0].n &&
+    page.url().includes("/commande") &&
+    !page.url().includes("/MP-");
+  const message8 = (await page.evaluate(() => document.body.innerText)).includes(
+    "Bientôt disponible",
   );
-  const p = pickupRow[0];
+
   record(
     "B8",
-    "Retrait en boutique : frais nuls et total cohérent",
-    p.deliveryFeeMga === 0 && p.totalMga === p.subtotalMga ? "OK" : "BUG",
-    `port ${p.deliveryFeeMga} Ar · sous-total ${p.subtotalMga} Ar · total ${p.totalMga} Ar`,
+    "Retrait en boutique désactivé : option grisée et commande refusée côté serveur",
+    pickupDisabled && pickupNoted && refused8 && message8 ? "OK" : "BUG",
+    `grisé=${pickupDisabled} · note=${pickupNoted} · refus=${refused8} · message=${message8} · ${ordersBefore8[0].n} → ${ordersAfter8[0].n} commandes`,
   );
 
   // B9 — livraison sans zone sélectionnée
@@ -945,8 +1006,8 @@ async function runBrowserProbes(browser) {
   );
   await claim.close();
 
-  // B18 / B19 — canevas vide : export puis enregistrement.
-  // L'atelier exige un compte : on ouvre une session pour tester le canevas vide.
+  // B18 / B18b / B19 — téléchargement réservé à l'équipe, puis canevas vide.
+  // L'atelier exige un compte : session client d'abord, session admin ensuite.
   const blank = await signedInPage(browser, "client@myphoto.mg", "Client1234!");
   const blankPage = blank.page;
   const blankErrors = [];
@@ -956,14 +1017,55 @@ async function runBrowserProbes(browser) {
   await blankPage.waitForSelector("canvas", { timeout: 30000 });
   const designsBefore = await sql('select count(*)::int as n from "Design"');
 
-  await clickByText(blankPage, "PNG");
-  await new Promise((resolve) => setTimeout(resolve, 3000));
+  const exportButtons = (page) =>
+    page.evaluate(() =>
+      [...document.querySelectorAll("button")].filter((button) =>
+        /^(PNG|JPG)$/.test((button.textContent ?? "").trim()),
+      ).length,
+    );
+
+  const clientExport = await blankPage.evaluate(() => ({
+    buttons: [...document.querySelectorAll("button")].filter((button) =>
+      /^(PNG|JPG)$/.test((button.textContent ?? "").trim()),
+    ).length,
+    reserved: document.body.innerText.includes("Téléchargement réservé"),
+  }));
   record(
     "B18",
-    "Export d'un canevas vide sans erreur JavaScript",
-    blankErrors.length === 0 ? "OK" : "BUG",
-    blankErrors.slice(0, 1).join(" | ") || "aucune erreur",
+    "Client : téléchargement du fichier d'impression masqué",
+    clientExport.buttons === 0 && clientExport.reserved && blankErrors.length === 0
+      ? "OK"
+      : "BUG",
+    `${clientExport.buttons} bouton(s) · message réservé=${clientExport.reserved}`,
   );
+
+  // B18b — l'équipe télécharge le fichier qu'elle va imprimer.
+  const team = await signedInPage(browser, "admin@myphoto.mg", "Admin1234!");
+  const teamErrors = [];
+  team.page.on("pageerror", (error) => teamErrors.push(String(error)));
+  await team.page.goto(`${BASE}/editeur`, { waitUntil: "networkidle2" });
+  await team.page.waitForSelector("canvas", { timeout: 30000 });
+
+  const teamButtons = await exportButtons(team.page);
+  if (teamButtons === 2) {
+    await clickByText(team.page, "PNG");
+    await new Promise((resolve) => setTimeout(resolve, 3000));
+  }
+
+  const exportStatus = await team.page.evaluate(() =>
+    [...document.querySelectorAll('[role="status"]')]
+      .map((node) => node.textContent ?? "")
+      .join(" | "),
+  );
+  record(
+    "B18b",
+    "Administrateur : boutons PNG/JPG présents et export exécuté",
+    teamButtons === 2 && teamErrors.length === 0 && exportStatus.includes("×")
+      ? "OK"
+      : "BUG",
+    `${teamButtons} bouton(s) · ${exportStatus.replace(/\s+/g, " ").slice(0, 60) || "(aucun statut)"}`,
+  );
+  await team.context.close();
 
   await blankPage.click('button[title="Enregistrer la création"]');
   await new Promise((resolve) => setTimeout(resolve, 4000));

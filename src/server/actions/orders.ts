@@ -27,7 +27,9 @@ export type CheckoutState = {
 
 const checkoutSchema = z.object({
   customerName: z.string().trim().min(2).max(120),
-  customerEmail: z.email().trim().toLowerCase(),
+  // Obligatoires : nom, référence de SMS, téléphone, zone et adresse.
+  // Facultatifs : e-mail et note pour l'atelier.
+  customerEmail: z.union([z.literal(""), z.email().trim().toLowerCase()]).optional(),
   customerPhone: z.string().trim().min(6).max(32),
   deliveryMode: z.enum(["PICKUP", "HOME_DELIVERY"]),
   deliveryZoneId: z.string().trim().optional(),
@@ -52,7 +54,7 @@ export async function createOrderAction(
 ): Promise<CheckoutState> {
   const parsed = checkoutSchema.safeParse({
     customerName: formData.get("customerName"),
-    customerEmail: formData.get("customerEmail"),
+    customerEmail: formData.get("customerEmail") ?? undefined,
     customerPhone: formData.get("customerPhone"),
     deliveryMode: formData.get("deliveryMode"),
     deliveryZoneId: formData.get("deliveryZoneId") ?? undefined,
@@ -110,6 +112,15 @@ export async function createOrderAction(
   let city = data.city ?? "";
   let region = data.region ?? "";
   let addressLine: string | null = data.addressLine ?? null;
+
+  if (data.deliveryMode === "PICKUP") {
+    // Le retrait en boutique est désactivé tant qu'aucun point de vente n'est
+    // ouvert : le formulaire le grise, le serveur le refuse aussi.
+    return {
+      errorKey: "checkout.pickupUnavailable",
+      fieldErrors: { deliveryMode: "invalid" },
+    };
+  }
 
   if (data.deliveryMode === "HOME_DELIVERY") {
     if (!data.deliveryZoneId) {
@@ -184,7 +195,7 @@ export async function createOrderAction(
           reference,
           userId: user?.id ?? null,
           customerName: data.customerName,
-          customerEmail: data.customerEmail,
+          customerEmail: data.customerEmail ?? "",
           customerPhone: data.customerPhone,
           deliveryMode: data.deliveryMode,
           deliveryZoneId,

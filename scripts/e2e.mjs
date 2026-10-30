@@ -386,10 +386,20 @@ async function main() {
       await motifButton.click();
       await sleep(300);
       const patternThumb = await thumbBackground();
+      // Depuis l'ajustement des motifs, chaque motif est une tuile SVG répétée :
+      // le même dessin sert à la vignette et au canevas d'impression.
+      // `backgroundImage` calculé ne renvoie que l'image : la répétition et la
+      // taille de tuile sont vérifiées via `background-size` juste après.
+      const patternTileSize = await page.evaluate(() => {
+        const thumb = [...document.querySelectorAll("button")].find((node) =>
+          (node.getAttribute("title") ?? "").startsWith("Page "),
+        );
+        return thumb ? getComputedStyle(thumb).backgroundSize : "";
+      });
       check(
         "Atelier : fond à motif choisi par le client",
-        patternThumb.includes("repeating-linear-gradient"),
-        patternThumb.slice(0, 70),
+        patternThumb.includes("data:image/svg+xml") && patternTileSize !== "",
+        `${patternThumb.slice(0, 40)}${patternTileSize ? ` · tuile ${patternTileSize}` : ""}`,
       );
     }
 

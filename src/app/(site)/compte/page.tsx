@@ -83,6 +83,9 @@ export default async function AccountPage() {
               <LayoutDashboard className="h-4 w-4" /> {t("nav.admin")}
             </Link>
           ) : null}
+          <Link href="/suivi" className="btn-outline text-sm">
+            <Package className="h-4 w-4" /> {t("account.trackCta")}
+          </Link>
           <Link href="/creer" className="btn-primary text-sm">
             <Plus className="h-4 w-4" /> {t("account.newPhotobook")}
           </Link>
@@ -220,9 +223,12 @@ export default async function AccountPage() {
       </section>
 
       <section className="mt-12">
-        <h2 className="flex items-center gap-2 text-lg font-bold">
-          <Package className="h-5 w-5 text-brand-600" /> {t("account.orders")}
-        </h2>
+        <div className="flex flex-wrap items-end justify-between gap-2">
+          <h2 className="flex items-center gap-2 text-lg font-bold">
+            <Package className="h-5 w-5 text-brand-600" /> {t("account.orders")}
+          </h2>
+          <p className="muted text-xs">{t("account.trackHint")}</p>
+        </div>
 
         {orders.length === 0 ? (
           <p className="muted mt-3">{t("order.noOrders")}</p>

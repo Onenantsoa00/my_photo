@@ -28,7 +28,7 @@ export function TemplatePreview({
       style={{
         width,
         height: document.canvas.height * scale,
-        background: page ? backgroundToCss(page.background) : "#ffffff",
+        background: page ? backgroundToCss(page.background, scale) : "#ffffff",
       }}
     >
       {(page?.layers ?? []).map((layer) => (
